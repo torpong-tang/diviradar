@@ -8,7 +8,14 @@
 cd /home/johnson/projects/diviradar
 git status
 npm run lint
-npm run build
+NEXT_PUBLIC_BASE_PATH=/diviradar npm run build
+```
+
+GitHub remote should use SSH. If the production server cannot reach `github.com:22`, keep SSH but use GitHub SSH-over-443:
+
+```bash
+git remote set-url origin ssh://git@ssh.github.com:443/torpong-tang/diviradar.git
+GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git pull --ff-only origin main
 ```
 
 ## Production Environment
@@ -113,6 +120,7 @@ curl -I https://2startup.cloud/diviradar
 ## Security Checklist
 
 - Git remote ต้องใช้ SSH ไม่ใช้ token ใน URL
+- หาก GitHub SSH port 22 timeout บน production ให้ใช้ `ssh://git@ssh.github.com:443/torpong-tang/diviradar.git`
 - ใช้ SSH key เข้า production server
 - ไม่ commit `.env`, database, backup, token หรือ temporary credential
 - Rotate/revoke token ที่เคยเปิดเผย
