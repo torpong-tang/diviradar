@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int      @id @default(autoincrement())
+  email      String   @unique
+  name       String?
+  password   String?
+  lineUserId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  portfolios Portfolio[]
+  alerts     Alert[]
+}
+
+model Stock {
+  id               Int      @id @default(autoincrement())
+  symbol           String   @unique
+  name             String
+  sector           String
+  market           String   @default("SET")
+  yahooSymbol      String
+  dividendPerShare Float?
+  targetBuyPrice   Float?
+  fairPriceLow     Float?
+  fairPriceHigh    Float?
+  weekLow52        Float?
+  weekHigh52       Float?
+  stabilityScore   Int      @default(80)
+  dividendGrowth   Float?   @default(0)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  prices     StockPrice[]
+  dividends  Dividend[]
+  portfolios Portfolio[]
+  alerts     Alert[]
+
+  @@index([sector])
+  @@index([isActive])
+}
+
+model StockPrice {
+  id            Int      @id @default(autoincrement())
+  stockId       Int
+  price         Float
+  change        Float?
+  changePercent Float?
+  volume        Float?
+  priceDate     DateTime
+  source        String   @default("Yahoo Finance")
+  createdAt     DateTime @default(now())
+
+  stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  @@index([stockId])
+  @@index([priceDate])
+}
+
+model Dividend {
+  id             Int      @id @default(autoincrement())
+  stockId        Int
+  xdDate         DateTime?
+  paymentDate    DateTime?
+  dividendAmount Float
+  dividendYear   Int
+  dividendType   String?
+  createdAt      DateTime @default(now())
+
+  stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  @@index([stockId])
+  @@index([xdDate])
+}
+
+model Portfolio {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  stockId   Int
+  shares    Float
+  avgCost   Float
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([stockId])
+}
+
+model Alert {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  stockId     Int
+  alertType   String
+  targetValue Float?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([stockId])
+}
+
+model NotificationLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  title     String
+  message   String
+  channel   String
+  status    String
+  sentAt    DateTime @default(now())
+}
+
+model Setting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
