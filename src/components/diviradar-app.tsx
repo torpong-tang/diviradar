@@ -5,12 +5,18 @@ import {
   Bell,
   CalendarDays,
   CheckCircle2,
+  Clock3,
   CircleDollarSign,
   Eye,
   EyeOff,
+  History,
+  Hourglass,
   LineChart,
   Loader2,
   LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   PieChart,
   Plus,
   RefreshCw,
@@ -19,8 +25,10 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  TrendingUp,
   Trash2,
-  WalletCards
+  WalletCards,
+  AlertTriangle
 } from "lucide-react";
 import { ConfirmModal, Modal, Spinner } from "@/components/ui";
 
@@ -38,7 +46,7 @@ type Stock = {
   fairPriceHigh: number | null;
   stabilityScore: number;
   latestPrice: { price: number; change?: number; changePercent?: number; volume?: number; priceDate: string } | null;
-  dividends: { id: number; xdDate: string | null; paymentDate: string | null; dividendAmount: number; dividendYear: number }[];
+  dividends: { id: number; xdDate: string | null; paymentDate: string | null; dividendAmount: number; dividendYear: number; dividendType?: string | null }[];
   radar: { score: number; status: string; tone: RadarTone; yieldPct: number; reasons: string[] };
 };
 
@@ -68,6 +76,30 @@ type AlertRow = {
   stock: { symbol: string };
 };
 
+type DividendHistoryRow = {
+  id: number;
+  xdDate: string | null;
+  paymentDate: string | null;
+  dividendAmount: number;
+  dividendYear: number;
+  dividendType?: string | null;
+};
+
+type WatchlistSortKey = "symbol" | "price" | "yield" | "score" | "status";
+type SortDirection = "asc" | "desc";
+
+type SettingsForm = {
+  monthly_dca_amount: string;
+  auto_price_update_enabled: string;
+  price_cron_days: string;
+  price_cron_times: string;
+  cron_time_tolerance_minutes: string;
+  line_notify_enabled: string;
+  line_channel_token: string;
+  line_target_id: string;
+  lineUserId: string;
+};
+
 type Bootstrap = {
   user: { id: number; email: string; name?: string | null; lineUserId?: string | null };
   radar: Stock[];
@@ -82,6 +114,8 @@ type Bootstrap = {
     annualDividend: number;
     monthlyDividend: number;
     dcaAmount: number;
+    lastPriceUpdatedAt: string | null;
+    lastSettradeXdSyncAt: string | null;
   };
   dcaPlan: { symbol: string; name: string; score: number; amount: number }[];
 };
@@ -96,6 +130,16 @@ const nav = [
   { key: "settings", label: "Settings", icon: Settings }
 ] as const;
 
+const cronDays = [
+  { value: "1", short: "Mon", label: "จันทร์" },
+  { value: "2", short: "Tue", label: "อังคาร" },
+  { value: "3", short: "Wed", label: "พุธ" },
+  { value: "4", short: "Thu", label: "พฤหัส" },
+  { value: "5", short: "Fri", label: "ศุกร์" },
+  { value: "6", short: "Sat", label: "เสาร์" },
+  { value: "0", short: "Sun", label: "อาทิตย์" }
+];
+
 function money(value: number, fraction = 0) {
   return new Intl.NumberFormat("th-TH", { maximumFractionDigits: fraction, minimumFractionDigits: fraction }).format(value || 0);
 }
@@ -109,12 +153,77 @@ function dateText(value?: string | null) {
   return new Intl.DateTimeFormat("th-TH", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
 }
 
+function dateTimeText(value?: string | null) {
+  if (!value) return "ยังไม่มีข้อมูล";
+  return new Intl.DateTimeFormat("th-TH", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(new Date(value));
+}
+
+function displayDividend(stock: Stock) {
+  const withDates = stock.dividends
+    .filter((dividend) => Boolean(dividend.xdDate))
+    .map((dividend) => ({ dividend, time: new Date(String(dividend.xdDate)).getTime() }))
+    .filter((item) => Number.isFinite(item.time));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const next = withDates
+    .filter((item) => item.time >= today.getTime())
+    .sort((a, b) => a.time - b.time)[0];
+  const latest = withDates.sort((a, b) => b.time - a.time)[0];
+  return next?.dividend || latest?.dividend || null;
+}
+
 function toneClass(tone: RadarTone) {
   return tone === "green" ? "status-green" : tone === "yellow" ? "status-yellow" : "status-red";
 }
 
+function StatusPill({ tone, label }: { tone: RadarTone; label: string }) {
+  const config =
+    tone === "green"
+      ? {
+          icon: TrendingUp,
+          className: "border-emerald-300/35 bg-white/8 text-emerald-300 shadow-[0_0_22px_rgba(52,211,153,0.16)]"
+        }
+      : tone === "yellow"
+        ? {
+            icon: Hourglass,
+            className: "border-gold/45 bg-white/8 text-gold shadow-[0_0_22px_rgba(251,191,36,0.18)]"
+          }
+        : {
+            icon: AlertTriangle,
+            className: "border-rose-300/35 bg-white/8 text-rose-300 shadow-[0_0_22px_rgba(244,63,94,0.16)]"
+          };
+  const Icon = config.icon;
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl border backdrop-blur-md ${config.className}`}
+    >
+      <Icon size={17} />
+    </span>
+  );
+}
+
+function sortIcon(active: boolean, direction: SortDirection) {
+  return active ? (direction === "asc" ? "↑" : "↓") : "↕";
+}
+
+function appPath(path: string) {
+  if (path.startsWith("http")) return path;
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
+  return `${basePath}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(appPath(path), {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) }
   });
@@ -137,9 +246,23 @@ export function DiviRadarApp() {
   const [sector, setSector] = useState("all");
   const [status, setStatus] = useState("all");
   const [selected, setSelected] = useState<Stock | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [historyBusySymbol, setHistoryBusySymbol] = useState<string | null>(null);
+  const [historyModal, setHistoryModal] = useState<{ stock: Pick<Stock, "symbol" | "name">; rows: DividendHistoryRow[] } | null>(null);
   const [portfolioForm, setPortfolioForm] = useState({ stockId: "", shares: "", avgCost: "", note: "" });
   const [alertForm, setAlertForm] = useState({ stockId: "", alertType: "Buy Alert", targetValue: "" });
-  const [settingsForm, setSettingsForm] = useState({ monthly_dca_amount: "20000", line_channel_token: "", line_target_id: "", lineUserId: "" });
+  const [settingsForm, setSettingsForm] = useState<SettingsForm>({
+    monthly_dca_amount: "20000",
+    auto_price_update_enabled: "false",
+    price_cron_days: "1,2,3,4,5",
+    price_cron_times: "10:30,12:30,16:45,18:00",
+    cron_time_tolerance_minutes: "3",
+    line_notify_enabled: "false",
+    line_channel_token: "",
+    line_target_id: "",
+    lineUserId: ""
+  });
   const [confirm, setConfirm] = useState<{ title: string; message: string; action: () => Promise<void>; danger?: boolean } | null>(null);
 
   const refresh = async () => {
@@ -150,6 +273,11 @@ export function DiviRadarApp() {
       setData(payload);
       setSettingsForm({
         monthly_dca_amount: payload.settings.find((x) => x.key === "monthly_dca_amount")?.value || "20000",
+        auto_price_update_enabled: payload.settings.find((x) => x.key === "auto_price_update_enabled")?.value || "false",
+        price_cron_days: payload.settings.find((x) => x.key === "price_cron_days")?.value || "1,2,3,4,5",
+        price_cron_times: payload.settings.find((x) => x.key === "price_cron_times")?.value || "10:30,12:30,16:45,18:00",
+        cron_time_tolerance_minutes: payload.settings.find((x) => x.key === "cron_time_tolerance_minutes")?.value || "3",
+        line_notify_enabled: payload.settings.find((x) => x.key === "line_notify_enabled")?.value || "false",
         line_channel_token: payload.settings.find((x) => x.key === "line_channel_token")?.value || "",
         line_target_id: payload.settings.find((x) => x.key === "line_target_id")?.value || "",
         lineUserId: payload.user.lineUserId || ""
@@ -206,6 +334,23 @@ export function DiviRadarApp() {
       setError(err instanceof Error ? err.message : "Action failed");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const openDividendHistory = async (stock: Stock) => {
+    setHistoryBusySymbol(stock.symbol);
+    setError("");
+    try {
+      const payload = await api<{ stock: Pick<Stock, "symbol" | "name">; dividends: DividendHistoryRow[] }>(
+        "/api/dividends/settrade/history",
+        { method: "POST", body: JSON.stringify({ symbol: stock.symbol, yearsBack: 6 }) }
+      );
+      setHistoryModal({ stock: payload.stock, rows: payload.dividends });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load dividend history");
+    } finally {
+      setHistoryBusySymbol(null);
     }
   };
 
@@ -267,8 +412,17 @@ export function DiviRadarApp() {
   return (
     <main className="min-h-screen pb-10">
       <header className="sticky top-0 z-30 border-b border-sky-400/20 bg-night/88 px-4 py-4 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:flex-row lg:items-center">
-          <div className="flex flex-1 items-center gap-3">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+            <div className="flex flex-1 items-center gap-3">
+            <button
+              type="button"
+              className="btn btn-gray !p-3 lg:hidden"
+              title="Open menu"
+              onClick={() => setMobileMenuOpen(true)}
+            >
+              <Menu size={22} />
+            </button>
             <div className="rounded-2xl bg-gold p-3 text-night shadow-gold">
               <PieChart />
             </div>
@@ -276,51 +430,64 @@ export function DiviRadarApp() {
               <h1 className="text-2xl font-extrabold">DiviRadar</h1>
               <p className="text-sm text-slate-300">วันนี้ควรซื้อหุ้นปันผลตัวไหน เพราะอะไร</p>
             </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="btn btn-blue"
+                onClick={() =>
+                  setConfirm({
+                    title: "อัปเดตราคาหุ้น",
+                    message: "ดึงราคาล่าสุดจาก Yahoo Finance สำหรับหุ้นใน Watchlist ทั้งหมด? การอัปเดตด้วยปุ่มนี้จะแสดงผลเฉพาะใน app และไม่ส่ง LINE OA",
+                    action: async () => {
+                      await api("/api/prices/update", { method: "POST", body: "{}" });
+                    }
+                  })
+                }
+              >
+                <RefreshCw size={18} /> Update Prices
+              </button>
+              <button className="btn btn-gray" onClick={logout}>
+                <LogOut size={18} /> Logout
+              </button>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              className="btn btn-blue"
-              onClick={() =>
-                setConfirm({
-                  title: "อัปเดตราคาหุ้น",
-                  message: "ดึงราคาล่าสุดจาก Yahoo Finance สำหรับหุ้นใน Watchlist ทั้งหมด?",
-                  action: async () => {
-                    await api("/api/prices/update", { method: "POST", body: "{}" });
-                  }
-                })
-              }
-            >
-              <RefreshCw size={18} /> Update Prices
-            </button>
-            <button className="btn btn-gray" onClick={logout}>
-              <LogOut size={18} /> Logout
-            </button>
+          <div className="flex flex-col gap-2 rounded-2xl border border-sky-400/20 bg-white/5 px-4 py-3 text-sm text-slate-200 md:flex-row md:items-center md:justify-between">
+            <div>
+              <span className="text-slate-400">Latest price data time:</span>{" "}
+              <span className="font-bold text-gold">{dateTimeText(data.summary.lastPriceUpdatedAt)}</span>
+            </div>
+            <div className="min-w-0">
+              <span className="text-slate-400">Signed in:</span>{" "}
+              <span className="font-bold text-white">{data.user.email}</span>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[260px_1fr]">
-        <aside className="glass h-fit rounded-3xl p-3">
-          <div className="mb-3 rounded-2xl bg-white/5 p-4">
-            <p className="text-sm text-slate-400">Signed in</p>
-            <p className="truncate font-bold">{data.user.email}</p>
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-40 bg-black/70 p-4 backdrop-blur-sm lg:hidden" onClick={() => setMobileMenuOpen(false)}>
+          <div className="max-w-80" onClick={(event) => event.stopPropagation()}>
+            <Sidebar
+              view={view}
+              collapsed={false}
+              onToggle={() => setMobileMenuOpen(false)}
+              onSelect={(key) => {
+                setView(key);
+                setMobileMenuOpen(false);
+              }}
+            />
           </div>
-          <nav className="grid gap-2">
-            {nav.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => setView(item.key)}
-                  className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-left font-bold transition ${
-                    view === item.key ? "bg-gold text-night shadow-gold" : "text-slate-200 hover:bg-white/8"
-                  }`}
-                >
-                  <Icon size={20} /> {item.label}
-                </button>
-              );
-            })}
-          </nav>
+        </div>
+      )}
+
+      <div className={`mx-auto grid max-w-7xl gap-6 px-4 py-6 ${sidebarCollapsed ? "lg:grid-cols-[88px_1fr]" : "lg:grid-cols-[260px_1fr]"}`}>
+        <aside className="hidden lg:block">
+          <Sidebar
+            view={view}
+            collapsed={sidebarCollapsed}
+            onToggle={() => setSidebarCollapsed((value) => !value)}
+            onSelect={setView}
+          />
         </aside>
 
         <section className="space-y-6">
@@ -368,7 +535,23 @@ export function DiviRadarApp() {
               }
             />
           )}
-          {view === "calendar" && <DividendCalendar stocks={data.radar} />}
+          {view === "calendar" && (
+            <DividendCalendar
+              stocks={data.radar}
+              lastSyncAt={data.summary.lastSettradeXdSyncAt}
+              onUpdateXd={() =>
+                setConfirm({
+                  title: "อัปเดต XD Calendar",
+                  message: "ดึงข้อมูล XD จาก Settrade Stock Calendar สำหรับหุ้นใน Watchlist และบันทึกลงฐานข้อมูล?",
+                  action: async () => {
+                    await api("/api/dividends/settrade/update", { method: "POST", body: JSON.stringify({ fullYear: true }) });
+                  }
+                })
+              }
+              onHistory={openDividendHistory}
+              historyBusySymbol={historyBusySymbol}
+            />
+          )}
           {view === "dca" && <DcaPlan data={data} />}
           {view === "alerts" && (
             <Alerts
@@ -414,6 +597,11 @@ export function DiviRadarApp() {
                         lineUserId: settingsForm.lineUserId,
                         settings: {
                           monthly_dca_amount: settingsForm.monthly_dca_amount,
+                          auto_price_update_enabled: settingsForm.auto_price_update_enabled,
+                          price_cron_days: settingsForm.price_cron_days,
+                          price_cron_times: settingsForm.price_cron_times,
+                          cron_time_tolerance_minutes: settingsForm.cron_time_tolerance_minutes,
+                          line_notify_enabled: settingsForm.line_notify_enabled,
                           line_channel_token: settingsForm.line_channel_token,
                           line_target_id: settingsForm.line_target_id
                         }
@@ -429,7 +617,7 @@ export function DiviRadarApp() {
                   action: async () => {
                     await api("/api/line/push", {
                       method: "POST",
-                      body: JSON.stringify({ title: "DiviRadar Test", message: "ทดสอบแจ้งเตือนหุ้นปันผลจาก DiviRadar" })
+                      body: JSON.stringify({ title: "DiviRadar Test", message: "ทดสอบแจ้งเตือนหุ้นปันผลจาก DiviRadar", force: true })
                     });
                   }
                 })
@@ -442,6 +630,7 @@ export function DiviRadarApp() {
       <footer className="mx-auto max-w-7xl px-4 pb-6 text-center text-sm text-slate-400">© 2026 TPT Team • Version 1.0</footer>
 
       {selected && <StockDetail stock={selected} onClose={() => setSelected(null)} />}
+      {historyModal && <DividendHistoryModal data={historyModal} onClose={() => setHistoryModal(null)} />}
       {confirm && (
         <ConfirmModal
           title={confirm.title}
@@ -453,6 +642,53 @@ export function DiviRadarApp() {
         />
       )}
     </main>
+  );
+}
+
+function Sidebar({
+  view,
+  collapsed,
+  onToggle,
+  onSelect
+}: {
+  view: (typeof nav)[number]["key"];
+  collapsed: boolean;
+  onToggle: () => void;
+  onSelect: (key: (typeof nav)[number]["key"]) => void;
+}) {
+  return (
+    <div className={`glass sticky top-32 h-fit rounded-3xl p-3 transition-all ${collapsed ? "w-[88px]" : "w-full"}`}>
+      <div className={`mb-3 flex items-center gap-3 rounded-2xl bg-white/5 p-3 ${collapsed ? "justify-center" : "justify-between"}`}>
+        {!collapsed && <div className="font-extrabold text-slate-200">Menu</div>}
+        <button
+          type="button"
+          className="rounded-2xl bg-slate-700/80 p-3 text-slate-100 transition hover:bg-slate-600"
+          title={collapsed ? "Expand menu" : "Collapse menu"}
+          onClick={onToggle}
+        >
+          {collapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
+        </button>
+      </div>
+      <nav className="grid gap-2">
+        {nav.map((item) => {
+          const Icon = item.icon;
+          const active = view === item.key;
+          return (
+            <button
+              key={item.key}
+              title={item.label}
+              onClick={() => onSelect(item.key)}
+              className={`flex items-center rounded-2xl px-4 py-3 font-bold transition ${
+                collapsed ? "justify-center" : "gap-3 text-left"
+              } ${active ? "bg-gold text-night shadow-gold" : "text-slate-200 hover:bg-white/8"}`}
+            >
+              <Icon size={20} />
+              {!collapsed && <span>{item.label}</span>}
+            </button>
+          );
+        })}
+      </nav>
+    </div>
   );
 }
 
@@ -475,7 +711,6 @@ function Dashboard({ data, buy, wait, expensive }: { data: Bootstrap; buy: Stock
       <div className="glass rounded-3xl p-6">
         <p className="text-gold">Dividend Copilot วันนี้</p>
         <h2 className="mt-2 text-3xl font-extrabold">หุ้นน่าสนใจวันนี้: {buy.slice(0, 3).map((x) => x.symbol).join(", ") || "ยังไม่มีสัญญาณซื้อชัดเจน"}</h2>
-        <p className="mt-3 max-w-3xl text-slate-300">คัดจาก Dividend Yield, Fair Zone, 52W High/Low, Stability, XD และ Dividend Growth แบบ rule-based ก่อนต่อยอด AI ในอนาคต</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="หุ้นใน Watchlist" value={`${data.summary.watchlistCount}`} icon={ShieldCheck} />
@@ -504,8 +739,9 @@ function RadarBucket({ title, rows }: { title: string; rows: Stock[] }) {
               <div className="text-sm text-slate-400">{stock.sector}</div>
             </div>
             <div className="text-right">
-              <div className="font-bold text-gold">{stock.radar.score}</div>
-              <div className="text-sm text-slate-400">{pct(stock.radar.yieldPct)}</div>
+              <div className="font-bold text-white">{money(stock.latestPrice?.price || 0, 2)} ฿</div>
+              <div className="text-sm font-bold text-gold">Score {stock.radar.score}</div>
+              <div className="text-sm text-slate-400">Yield {pct(stock.radar.yieldPct)}</div>
             </div>
           </div>
         ))}
@@ -526,6 +762,36 @@ function Watchlist(props: {
   onStatus: (v: string) => void;
   onSelect: (stock: Stock) => void;
 }) {
+  const [sortKey, setSortKey] = useState<WatchlistSortKey>("score");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const changeSort = (key: WatchlistSortKey) => {
+    if (sortKey === key) {
+      setSortDirection((value) => (value === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDirection(key === "symbol" || key === "status" ? "asc" : "desc");
+    }
+  };
+  const sortedRows = [...props.rows].sort((a, b) => {
+    const getValue = (stock: Stock) => {
+      if (sortKey === "symbol") return stock.symbol;
+      if (sortKey === "price") return stock.latestPrice?.price || 0;
+      if (sortKey === "yield") return stock.radar.yieldPct || 0;
+      if (sortKey === "score") return stock.radar.score || 0;
+      return stock.radar.status || "";
+    };
+    const left = getValue(a);
+    const right = getValue(b);
+    const result = typeof left === "string" && typeof right === "string" ? left.localeCompare(right) : Number(left) - Number(right);
+    return sortDirection === "asc" ? result : -result;
+  });
+  const SortHeader = ({ column, label }: { column: WatchlistSortKey; label: string }) => (
+    <button type="button" className="inline-flex items-center gap-2 font-extrabold uppercase text-slate-300 hover:text-gold" onClick={() => changeSort(column)}>
+      {label}
+      <span className={sortKey === column ? "text-gold" : "text-slate-500"}>{sortIcon(sortKey === column, sortDirection)}</span>
+    </button>
+  );
+
   return (
     <div className="glass rounded-3xl p-5">
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -550,36 +816,36 @@ function Watchlist(props: {
         <table>
           <thead>
             <tr>
-              <th>หุ้น</th>
-              <th>ราคา</th>
-              <th>Yield</th>
-              <th>XD</th>
-              <th>Score</th>
-              <th>สถานะ</th>
+              <th><SortHeader column="symbol" label="หุ้น" /></th>
+              <th><SortHeader column="price" label="ราคา" /></th>
+              <th><SortHeader column="yield" label="Yield" /></th>
+              <th><SortHeader column="score" label="Score" /></th>
+              <th><SortHeader column="status" label="สถานะ" /></th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            {props.rows.map((stock) => (
-              <tr key={stock.id}>
-                <td>
-                  <div className="font-bold text-white">{stock.symbol}</div>
-                  <div className="text-sm text-slate-400">{stock.name}</div>
-                </td>
-                <td>{money(stock.latestPrice?.price || 0, 2)}</td>
-                <td>{pct(stock.radar.yieldPct)}</td>
-                <td>{dateText(stock.dividends?.[0]?.xdDate)}</td>
-                <td className="font-extrabold text-gold">{stock.radar.score}</td>
-                <td>
-                  <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-bold ${toneClass(stock.radar.tone)}`}>{stock.radar.status}</span>
-                </td>
-                <td>
-                  <button className="btn btn-blue !p-3" title="ดูรายละเอียด" onClick={() => props.onSelect(stock)}>
-                    <Eye size={18} />
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {sortedRows.map((stock) => {
+              return (
+                <tr key={stock.id}>
+                  <td>
+                    <div className="font-bold text-white">{stock.symbol}</div>
+                    <div className="text-sm text-slate-400">{stock.name}</div>
+                  </td>
+                  <td>{money(stock.latestPrice?.price || 0, 2)}</td>
+                  <td>{pct(stock.radar.yieldPct)}</td>
+                  <td className="font-extrabold text-gold">{stock.radar.score}</td>
+                  <td>
+                    <StatusPill tone={stock.radar.tone} label={stock.radar.status} />
+                  </td>
+                  <td>
+                    <button className="btn btn-blue !p-3" title="ดูรายละเอียด" onClick={() => props.onSelect(stock)}>
+                      <Eye size={18} />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -588,6 +854,10 @@ function Watchlist(props: {
 }
 
 function StockDetail({ stock, onClose }: { stock: Stock; onClose: () => void }) {
+  const dividend = displayDividend(stock);
+  const dividendRows = [...stock.dividends]
+    .filter((row) => row.xdDate || row.paymentDate || row.dividendAmount)
+    .sort((a, b) => String(b.xdDate || "").localeCompare(String(a.xdDate || "")));
   return (
     <Modal title={`${stock.symbol} • ${stock.name}`} onClose={onClose}>
       <div className="grid gap-4 md:grid-cols-3">
@@ -605,9 +875,45 @@ function StockDetail({ stock, onClose }: { stock: Stock; onClose: () => void }) 
       </div>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <Info label="ปันผลล่าสุด/ปี" value={`${money(stock.dividendPerShare || 0, 2)} ฿`} />
-        <Info label="Payment Date" value={dateText(stock.dividends?.[0]?.paymentDate)} />
+        <Info label="Payment Date" value={dateText(dividend?.paymentDate)} />
         <Info label="ราคาเป้าหมายสะสม" value={`${money(stock.targetBuyPrice || 0, 2)} ฿`} />
         <Info label="Fair Zone" value={`${money(stock.fairPriceLow || 0, 2)} - ${money(stock.fairPriceHigh || 0, 2)} ฿`} />
+      </div>
+      <div className="mt-6 rounded-3xl border border-sky-400/20 bg-white/5 p-5">
+        <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-xl font-extrabold text-white">ตารางปันผล</h3>
+            <p className="text-sm text-slate-400">ข้อมูลเดียวกับ Dividend Calendar สำหรับหุ้น {stock.symbol}</p>
+          </div>
+          <span className="rounded-full border border-gold/30 bg-gold/10 px-3 py-1 text-sm font-bold text-gold">{dividendRows.length} รายการ</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>XD</th>
+                <th>Payment</th>
+                <th>Dividend</th>
+                <th>Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dividendRows.map((row) => (
+                <tr key={row.id}>
+                  <td>{dateText(row.xdDate)}</td>
+                  <td>{dateText(row.paymentDate)}</td>
+                  <td>{money(row.dividendAmount || 0, 4)} ฿</td>
+                  <td>{row.dividendType || "-"}</td>
+                </tr>
+              ))}
+              {dividendRows.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="text-center text-slate-400">ยังไม่มีข้อมูลปันผล</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </Modal>
   );
@@ -674,26 +980,101 @@ function Portfolio(props: {
   );
 }
 
-function DividendCalendar({ stocks }: { stocks: Stock[] }) {
-  const rows = stocks.flatMap((stock) => stock.dividends.map((dividend) => ({ stock, dividend }))).sort((a, b) => String(a.dividend.xdDate).localeCompare(String(b.dividend.xdDate)));
+function DividendCalendar({
+  stocks,
+  lastSyncAt,
+  onUpdateXd,
+  onHistory,
+  historyBusySymbol
+}: {
+  stocks: Stock[];
+  lastSyncAt: string | null;
+  onUpdateXd: () => void;
+  onHistory: (stock: Stock) => void;
+  historyBusySymbol: string | null;
+}) {
+  const rows = stocks
+    .map((stock) => ({ stock, dividend: displayDividend(stock) }))
+    .filter((row): row is { stock: Stock; dividend: NonNullable<ReturnType<typeof displayDividend>> } => Boolean(row.dividend))
+    .sort((a, b) => String(a.dividend.xdDate).localeCompare(String(b.dividend.xdDate)));
   return (
     <div className="glass rounded-3xl p-5">
-      <h2 className="mb-5 text-3xl font-extrabold">Dividend Calendar</h2>
+      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-3xl font-extrabold">Dividend Calendar</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Source: Settrade Stock Calendar • Last XD sync: <span className="font-bold text-gold">{dateTimeText(lastSyncAt)}</span>
+          </p>
+        </div>
+        <button className="btn btn-blue" onClick={onUpdateXd}>
+          <RefreshCw size={18} /> Update XD Calendar
+        </button>
+      </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {rows.map(({ stock, dividend }) => (
           <div key={`${stock.id}-${dividend.id}`} className="rounded-3xl border border-sky-400/20 bg-white/5 p-5">
             <div className="flex items-center justify-between">
-              <div className="text-2xl font-extrabold">{stock.symbol}</div>
-              <span className={`rounded-full border px-3 py-1 text-sm font-bold ${toneClass(stock.radar.tone)}`}>{stock.radar.status}</span>
+              <div className="text-2xl font-extrabold">
+                {stock.symbol} <span className="text-lg font-bold text-slate-300">({money(stock.latestPrice?.price || 0, 2)} ฿)</span>
+              </div>
+              <StatusPill tone={stock.radar.tone} label={stock.radar.status} />
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <Info label="XD" value={dateText(dividend.xdDate)} />
               <Info label="Payment" value={dateText(dividend.paymentDate)} />
+              <Info label="Dividend" value={`${money(dividend.dividendAmount || 0, 4)} ฿`} />
+              <Info label="Type" value={dividend.dividendType || "-"} />
             </div>
+            <button className="btn btn-yellow mt-4 w-full" onClick={() => onHistory(stock)} disabled={historyBusySymbol === stock.symbol}>
+              {historyBusySymbol === stock.symbol ? <Loader2 className="animate-spin" size={18} /> : <History size={18} />}
+              ประวัติปันผล 4 ครั้งล่าสุด
+            </button>
           </div>
         ))}
+        {rows.length === 0 && <p className="text-slate-400">ยังไม่มีข้อมูล XD Calendar กด Update XD Calendar เพื่อดึงจาก Settrade</p>}
       </div>
     </div>
+  );
+}
+
+function DividendHistoryModal({ data, onClose }: { data: { stock: Pick<Stock, "symbol" | "name">; rows: DividendHistoryRow[] }; onClose: () => void }) {
+  return (
+    <Modal title={`Dividend History • ${data.stock.symbol}`} onClose={onClose}>
+      <div className="mb-5 rounded-3xl border border-gold/30 bg-gold/10 p-5">
+        <div className="text-2xl font-extrabold text-gold">{data.stock.symbol}</div>
+        <p className="mt-1 text-slate-200">{data.stock.name}</p>
+        <p className="mt-2 text-sm text-slate-400">แสดงประวัติ XD จาก Settrade Stock Calendar 4 ครั้งล่าสุดที่บันทึกใน SQLite</p>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ครั้งที่</th>
+              <th>วันขึ้น XD</th>
+              <th>วันจ่าย</th>
+              <th>ปันผล/หุ้น</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((row, index) => (
+              <tr key={row.id}>
+                <td className="font-bold text-gold">{index + 1}</td>
+                <td>{dateText(row.xdDate)}</td>
+                <td>{dateText(row.paymentDate)}</td>
+                <td>{money(row.dividendAmount || 0, 4)} ฿</td>
+                <td>{row.dividendType || "-"}</td>
+              </tr>
+            ))}
+            {data.rows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="text-center text-slate-400">ไม่พบประวัติปันผลจาก Settrade สำหรับหุ้นนี้</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Modal>
   );
 }
 
@@ -757,21 +1138,113 @@ function Alerts(props: {
 }
 
 function SettingsView(props: {
-  form: { monthly_dca_amount: string; line_channel_token: string; line_target_id: string; lineUserId: string };
-  setForm: (v: { monthly_dca_amount: string; line_channel_token: string; line_target_id: string; lineUserId: string }) => void;
+  form: SettingsForm;
+  setForm: (v: SettingsForm) => void;
   logs: Bootstrap["notificationLogs"];
   onSave: () => void;
   onTestLine: () => void;
 }) {
+  const [newTime, setNewTime] = useState("18:00");
+  const selectedDays = props.form.price_cron_days.split(",").filter(Boolean);
+  const selectedTimes = props.form.price_cron_times.split(",").map((time) => time.trim()).filter(Boolean).sort();
+  const dayPreview = cronDays.filter((day) => selectedDays.includes(day.value)).map((day) => day.short).join(", ") || "No days";
+  const cronPreview = selectedDays.length && selectedTimes.length
+    ? selectedTimes.map((time) => {
+        const [hour, minute] = time.split(":");
+        return `${Number(minute)} ${Number(hour)} * * ${selectedDays.join(",")} curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" https://2startup.cloud/diviradar/api/cron/market-update >/dev/null`;
+      }).join("\n")
+    : "เลือกวันและเวลาอย่างน้อย 1 รายการ";
+
+  const updateDays = (dayValue: string) => {
+    const next = selectedDays.includes(dayValue)
+      ? selectedDays.filter((value) => value !== dayValue)
+      : [...selectedDays, dayValue];
+    const sorted = cronDays.map((day) => day.value).filter((value) => next.includes(value));
+    props.setForm({ ...props.form, price_cron_days: sorted.join(",") });
+  };
+
+  const addTime = () => {
+    if (!newTime || selectedTimes.includes(newTime)) return;
+    props.setForm({ ...props.form, price_cron_times: [...selectedTimes, newTime].sort().join(",") });
+  };
+
+  const removeTime = (time: string) => {
+    props.setForm({ ...props.form, price_cron_times: selectedTimes.filter((value) => value !== time).join(",") });
+  };
+
   return (
     <div className="space-y-5">
       <div className="glass rounded-3xl p-5">
         <h2 className="mb-5 text-3xl font-extrabold">Settings</h2>
+        <div className="mb-6 grid gap-4 md:grid-cols-2">
+          <ToggleRow
+            icon={RefreshCw}
+            title="Auto Price Update"
+            description="เปิดให้ cron endpoint ดึงราคาจาก Yahoo Finance ตามรอบที่กำหนด"
+            checked={props.form.auto_price_update_enabled === "true"}
+            onChange={(checked) => props.setForm({ ...props.form, auto_price_update_enabled: checked ? "true" : "false" })}
+          />
+          <ToggleRow
+            icon={Bell}
+            title="LINE OA Notification"
+            description="ส่ง Daily Radar / price update summary ผ่าน LINE OA เมื่อ cron ทำงาน"
+            checked={props.form.line_notify_enabled === "true"}
+            onChange={(checked) => props.setForm({ ...props.form, line_notify_enabled: checked ? "true" : "false" })}
+          />
+        </div>
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block"><span className="mb-2 block text-slate-300">DCA รายเดือน</span><input className="field" value={props.form.monthly_dca_amount} onChange={(e) => props.setForm({ ...props.form, monthly_dca_amount: e.target.value })} /></label>
+          <label className="block"><span className="mb-2 block text-slate-300">Schedule tolerance (minutes)</span><input className="field" type="number" min="0" max="30" value={props.form.cron_time_tolerance_minutes} onChange={(e) => props.setForm({ ...props.form, cron_time_tolerance_minutes: e.target.value })} /></label>
+          <div className="md:col-span-2 rounded-3xl border border-sky-400/20 bg-white/5 p-5">
+            <div className="mb-4 flex items-center gap-2 font-extrabold text-white"><Clock3 className="text-gold" /> Price Update Schedule</div>
+            <div className="mb-4">
+              <p className="mb-2 text-sm text-slate-400">เลือกวันที่ให้ระบบดึงราคาอัตโนมัติ</p>
+              <div className="flex flex-wrap gap-2">
+                {cronDays.map((day) => {
+                  const active = selectedDays.includes(day.value);
+                  return (
+                    <button
+                      key={day.value}
+                      type="button"
+                      className={`rounded-2xl border px-4 py-2 font-bold transition ${active ? "border-gold bg-gold text-night" : "border-sky-400/20 bg-night/70 text-slate-300"}`}
+                      onClick={() => updateDays(day.value)}
+                      title={day.label}
+                    >
+                      {day.short}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-sm text-slate-400">เพิ่มรอบเวลา</p>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <input className="field sm:max-w-48" type="time" value={newTime} onChange={(event) => setNewTime(event.target.value)} />
+                <button type="button" className="btn btn-blue" onClick={addTime}><Plus size={18} /> Add Time</button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selectedTimes.map((time) => (
+                  <button key={time} type="button" className="rounded-2xl border border-gold/50 bg-gold/10 px-4 py-2 font-bold text-gold" onClick={() => removeTime(time)} title="Click to remove">
+                    {time} ×
+                  </button>
+                ))}
+                {selectedTimes.length === 0 && <span className="text-sm text-slate-500">ยังไม่มีเวลา</span>}
+              </div>
+            </div>
+            <div className="mt-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
+              <p className="font-bold text-cyan-100">Schedule summary</p>
+              <p className="mt-1 text-sm text-slate-300">Days: {dayPreview}</p>
+              <p className="text-sm text-slate-300">Times: {selectedTimes.join(", ") || "No times"}</p>
+            </div>
+          </div>
           <label className="block"><span className="mb-2 block text-slate-300">LINE Target ID</span><input className="field" value={props.form.line_target_id} onChange={(e) => props.setForm({ ...props.form, line_target_id: e.target.value })} /></label>
           <label className="block md:col-span-2"><span className="mb-2 block text-slate-300">LINE Channel Token</span><input className="field" value={props.form.line_channel_token} onChange={(e) => props.setForm({ ...props.form, line_channel_token: e.target.value })} /></label>
           <label className="block md:col-span-2"><span className="mb-2 block text-slate-300">User.lineUserId</span><input className="field" value={props.form.lineUserId} onChange={(e) => props.setForm({ ...props.form, lineUserId: e.target.value })} /></label>
+        </div>
+        <div className="mt-4 rounded-2xl border border-sky-400/20 bg-cyan-400/10 p-4 text-sm text-cyan-50">
+          <div className="mb-2 flex items-center gap-2 font-bold text-gold"><SlidersHorizontal size={18} /> วิธีใช้งาน cron</div>
+          <p>ตั้งวันและเวลาใน app ได้จากส่วนด้านบน ส่วน server cron แนะนำให้เรียก endpoint ทุก 5 นาที แล้วให้ app เป็นตัวตรวจวัน/เวลาและ switch เปิด/ปิด</p>
+          <pre className="mt-3 max-h-48 overflow-auto rounded-2xl bg-night/80 p-3 text-xs text-cyan-100">{cronPreview}</pre>
         </div>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <button className="btn btn-green" onClick={props.onSave}><Save size={18} /> บันทึก Settings</button>
@@ -791,6 +1264,42 @@ function SettingsView(props: {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ToggleRow({
+  icon: Icon,
+  title,
+  description,
+  checked,
+  onChange
+}: {
+  icon: typeof RefreshCw;
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className={`rounded-3xl border p-4 transition ${checked ? "border-gold/60 bg-gold/10" : "border-sky-400/20 bg-white/5"}`}>
+      <div className="flex items-center gap-4">
+        <div className={`rounded-2xl p-3 ${checked ? "bg-gold text-night" : "bg-slate-700 text-slate-200"}`}>
+          <Icon size={22} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-extrabold text-white">{title}</div>
+          <p className="mt-1 text-sm text-slate-400">{description}</p>
+        </div>
+        <button
+          type="button"
+          aria-pressed={checked}
+          className={`relative h-9 w-16 shrink-0 rounded-full p-1 transition ${checked ? "bg-gold" : "bg-slate-600"}`}
+          onClick={() => onChange(!checked)}
+        >
+          <span className={`block h-7 w-7 rounded-full bg-white shadow transition ${checked ? "translate-x-7" : "translate-x-0"}`} />
+        </button>
       </div>
     </div>
   );

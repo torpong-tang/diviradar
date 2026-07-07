@@ -1,6 +1,14 @@
 import { prisma } from "@/lib/prisma";
 
-export async function pushLineMessage(title: string, message: string) {
+export async function pushLineMessage(title: string, message: string, options: { force?: boolean } = {}) {
+  const notifyEnabled = (await prisma.setting.findUnique({ where: { key: "line_notify_enabled" } }))?.value ?? "false";
+  if (!options.force && notifyEnabled !== "true") {
+    await prisma.notificationLog.create({
+      data: { title, message, channel: "LINE", status: "SKIPPED_DISABLED" }
+    });
+    return { ok: false, status: "SKIPPED_DISABLED" };
+  }
+
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN || (await prisma.setting.findUnique({ where: { key: "line_channel_token" } }))?.value;
   const target = process.env.LINE_TARGET_ID || (await prisma.setting.findUnique({ where: { key: "line_target_id" } }))?.value;
 

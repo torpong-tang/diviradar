@@ -6,7 +6,8 @@ module.exports = {
       script: "node_modules/next/dist/bin/next",
       args: "start -p 3010 -H 127.0.0.1",
       env: {
-        NODE_ENV: "production"
+        NODE_ENV: "production",
+        NEXT_PUBLIC_BASE_PATH: "/diviradar"
       }
     }
   ]

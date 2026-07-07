@@ -15,7 +15,11 @@ const stocks = [
   { symbol: "BBL", name: "Bangkok Bank", sector: "Banking", yahooSymbol: "BBL.BK", price: 158, dps: 7, fairLow: 145, fairHigh: 170, target: 148, low52: 128, high52: 174, stability: 90, growth: 4 },
   { symbol: "ADVANC", name: "Advanced Info Service", sector: "ICT", yahooSymbol: "ADVANC.BK", price: 222, dps: 8.6, fairLow: 200, fairHigh: 240, target: 205, low52: 183, high52: 238, stability: 94, growth: 5 },
   { symbol: "SCB", name: "SCB X", sector: "Banking", yahooSymbol: "SCB.BK", price: 114, dps: 8.4, fairLow: 101, fairHigh: 122, target: 105, low52: 92, high52: 124, stability: 84, growth: 3 },
-  { symbol: "TTB", name: "TMBThanachart Bank", sector: "Banking", yahooSymbol: "TTB.BK", price: 1.92, dps: 0.11, fairLow: 1.7, fairHigh: 2.1, target: 1.78, low52: 1.48, high52: 2.16, stability: 78, growth: 6 }
+  { symbol: "TTB", name: "TMBThanachart Bank", sector: "Banking", yahooSymbol: "TTB.BK", price: 1.92, dps: 0.11, fairLow: 1.7, fairHigh: 2.1, target: 1.78, low52: 1.48, high52: 2.16, stability: 78, growth: 6 },
+  { symbol: "CPF", name: "Charoen Pokphand Foods", sector: "Food", yahooSymbol: "CPF.BK", price: 22.5, dps: 0.65, fairLow: 20, fairHigh: 27, target: 21, low52: 18.2, high52: 26.75, stability: 76, growth: 2 },
+  { symbol: "CPALL", name: "CP All", sector: "Commerce", yahooSymbol: "CPALL.BK", price: 50.75, dps: 1.25, fairLow: 48, fairHigh: 62, target: 49, low52: 43.5, high52: 68, stability: 84, growth: 4 },
+  { symbol: "MINT", name: "Minor International", sector: "Tourism", yahooSymbol: "MINT.BK", price: 25.25, dps: 0.35, fairLow: 24, fairHigh: 34, target: 24.5, low52: 21.9, high52: 36, stability: 70, growth: 5 },
+  { symbol: "AOT", name: "Airports of Thailand", sector: "Transportation", yahooSymbol: "AOT.BK", price: 39.25, dps: 0.79, fairLow: 36, fairHigh: 48, target: 38, low52: 31.5, high52: 64, stability: 82, growth: 3 }
 ];
 
 async function main() {
@@ -49,6 +53,20 @@ async function main() {
     update: { value: "" },
     create: { key: "line_target_id", value: "" }
   });
+
+  for (const setting of [
+    { key: "auto_price_update_enabled", value: "false" },
+    { key: "price_cron_days", value: "1,2,3,4,5" },
+    { key: "price_cron_times", value: "10:30,12:30,16:45,18:00" },
+    { key: "cron_time_tolerance_minutes", value: "3" },
+    { key: "line_notify_enabled", value: "false" }
+  ]) {
+    await prisma.setting.upsert({
+      where: { key: setting.key },
+      update: { value: setting.value },
+      create: setting
+    });
+  }
 
   for (const item of stocks) {
     const stock = await prisma.stock.upsert({

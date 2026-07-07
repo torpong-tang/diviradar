@@ -12,7 +12,7 @@ export async function GET() {
         where: { isActive: true },
         include: {
           prices: { orderBy: { priceDate: "desc" }, take: 1 },
-          dividends: { orderBy: [{ xdDate: "asc" }], take: 3 }
+          dividends: { orderBy: [{ xdDate: "desc" }], take: 12 }
         },
         orderBy: { symbol: "asc" }
       }),
@@ -56,7 +56,14 @@ export async function GET() {
       portfolioValue: portfolioRows.reduce((sum, x) => sum + x.currentValue, 0),
       annualDividend: portfolioRows.reduce((sum, x) => sum + x.estimatedDividend, 0),
       monthlyDividend: portfolioRows.reduce((sum, x) => sum + x.monthlyDividend, 0),
-      dcaAmount: Number(settings.find((x) => x.key === "monthly_dca_amount")?.value || 20000)
+      dcaAmount: Number(settings.find((x) => x.key === "monthly_dca_amount")?.value || 20000),
+      lastSettradeXdSyncAt: settings.find((x) => x.key === "last_settrade_xd_sync_at")?.value || null,
+      lastPriceUpdatedAt:
+        radar
+          .map((stock) => stock.latestPrice?.priceDate?.toISOString())
+          .filter((value): value is string => Boolean(value))
+          .sort()
+          .at(-1) ?? null
     };
 
     const dcaCandidates = radar
