@@ -239,7 +239,7 @@ export function DiviRadarApp() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<(typeof nav)[number]["key"]>("dashboard");
-  const [login, setLogin] = useState({ email: "torpong.t@gmail.com", password: "Pound1234" });
+  const [login, setLogin] = useState({ email: "torpong.t@gmail.com", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -399,7 +399,6 @@ export function DiviRadarApp() {
             {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
             Login
           </button>
-          <p className="mt-4 text-sm text-slate-400">Default: torpong.t@gmail.com / Pound1234</p>
         </form>
       </main>
     );
