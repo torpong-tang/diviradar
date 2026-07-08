@@ -33,6 +33,7 @@ import { ConfirmModal, Modal, Spinner } from "@/components/ui";
 import { api } from "@/components/diviradar/client-api";
 import { dateText, dateTimeText, displayDividend, money, pct, sortIcon } from "@/components/diviradar/formatters";
 import { LoginView } from "@/components/diviradar/login-view";
+import { XdHistoryMonthTable } from "@/components/diviradar/xd-history-month-table";
 import type {
   AlertRow,
   Bootstrap,
@@ -856,6 +857,7 @@ function DividendCalendar({
         ))}
         {rows.length === 0 && <p className="text-slate-400">ยังไม่มีข้อมูล XD Calendar กด Update XD Calendar เพื่อดึงจาก Settrade</p>}
       </div>
+      <XdHistoryMonthTable stocks={stocks} />
     </div>
   );
 }
