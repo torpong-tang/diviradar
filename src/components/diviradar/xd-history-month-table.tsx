@@ -31,13 +31,16 @@ export function XdHistoryMonthTable({ stocks }: { stocks: Stock[] }) {
   const [year, setYear] = useState("all");
   const [sector, setSector] = useState("all");
 
-  const entries = useMemo<XdEntry[]>(
-    () =>
-      stocks
-        .flatMap((stock) =>
-          stock.dividends.map((dividend) => {
+  const entries = useMemo<XdEntry[]>(() => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
+    return stocks
+      .flatMap((stock) =>
+        stock.dividends
+          .map((dividend) => {
             const xdDate = parseXdDate(dividend.xdDate);
-            if (!xdDate) return null;
+            if (!xdDate || xdDate.getTime() > today.getTime()) return null;
             return {
               key: `${stock.id}-${dividend.id}`,
               symbol: stock.symbol,
@@ -51,11 +54,12 @@ export function XdHistoryMonthTable({ stocks }: { stocks: Stock[] }) {
               dividendType: dividend.dividendType || null
             };
           })
-        )
-        .filter((entry): entry is XdEntry => Boolean(entry))
-        .sort((a, b) => new Date(a.xdDate).getTime() - new Date(b.xdDate).getTime()),
-    [stocks]
-  );
+          .filter((entry): entry is XdEntry => Boolean(entry))
+          .sort((a, b) => new Date(b.xdDate).getTime() - new Date(a.xdDate).getTime())
+          .slice(0, 4)
+      )
+      .sort((a, b) => new Date(a.xdDate).getTime() - new Date(b.xdDate).getTime());
+  }, [stocks]);
 
   const years = useMemo(
     () => Array.from(new Set(entries.map((entry) => entry.year))).sort((a, b) => b - a),
@@ -101,7 +105,7 @@ export function XdHistoryMonthTable({ stocks }: { stocks: Stock[] }) {
             <CalendarDays size={18} />
             <span className="font-extrabold">XD History by Month</span>
           </div>
-          <p className="mt-2 text-sm text-slate-400">แสดงหุ้นตามเดือนขึ้น XD จากข้อมูลปันผลที่บันทึกใน SQLite</p>
+          <p className="mt-2 text-sm text-slate-400">แสดงหุ้นตามเดือนขึ้น XD เฉพาะ 4 งวดย้อนหลังล่าสุดต่อหุ้นจากข้อมูลใน SQLite</p>
         </div>
         <div className="grid gap-3 md:grid-cols-3 xl:min-w-[760px]">
           <label className="field flex items-center gap-3">
