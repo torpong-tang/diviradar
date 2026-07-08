@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bell,
   Calculator,
@@ -904,18 +904,69 @@ function DividendHistoryModal({ data, onClose }: { data: { stock: Pick<Stock, "s
   );
 }
 
+type DcaPlanCard = Bootstrap["dcaPlan"][number] & {
+  price: number;
+  shares: number;
+  actualAmount: number;
+  variancePct: number;
+  isWithinTolerance: boolean;
+};
+
+function calculateLotPurchase(allocatedAmount: number, price: number) {
+  if (!Number.isFinite(allocatedAmount) || allocatedAmount <= 0 || !Number.isFinite(price) || price <= 0) {
+    return { shares: 0, actualAmount: 0, variancePct: 0, isWithinTolerance: false };
+  }
+
+  const rawLots = allocatedAmount / (price * 100);
+  const candidates = Array.from(new Set([Math.floor(rawLots), Math.round(rawLots), Math.ceil(rawLots)]))
+    .filter((lots) => lots > 0)
+    .map((lots) => {
+      const shares = lots * 100;
+      const actualAmount = shares * price;
+      const variancePct = ((actualAmount - allocatedAmount) / allocatedAmount) * 100;
+      return { shares, actualAmount, variancePct, isWithinTolerance: Math.abs(variancePct) <= 5 };
+    })
+    .sort((a, b) => Math.abs(a.variancePct) - Math.abs(b.variancePct));
+
+  return candidates[0] ?? { shares: 0, actualAmount: 0, variancePct: 0, isWithinTolerance: false };
+}
+
 function DcaPlan({ data }: { data: Bootstrap }) {
   const [dcaAmount, setDcaAmount] = useState(String(data.summary.dcaAmount || 0));
   const [calculatedAmount, setCalculatedAmount] = useState(Number(data.summary.dcaAmount || 0));
-  const [calculatedPlan, setCalculatedPlan] = useState(data.dcaPlan);
+  const [calculatedPlan, setCalculatedPlan] = useState<DcaPlanCard[]>([]);
   const [error, setError] = useState("");
 
+  const buildPlan = useCallback((amount: number): DcaPlanCard[] => {
+    const candidates = data.radar
+      .filter((stock) => stock.radar.score >= 80)
+      .sort((a, b) => b.radar.score - a.radar.score)
+      .slice(0, 3);
+    const weights = [0.4, 0.35, 0.25].slice(0, candidates.length);
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
+
+    return candidates.map((stock, index) => {
+      const allocatedAmount = Math.round(((amount * weights[index]) / totalWeight) / 100) * 100;
+      const price = stock.latestPrice?.price || 0;
+      const lot = calculateLotPurchase(allocatedAmount, price);
+      return {
+        symbol: stock.symbol,
+        name: stock.name,
+        score: stock.radar.score,
+        amount: allocatedAmount,
+        price,
+        ...lot
+      };
+    });
+  }, [data.radar]);
+
   useEffect(() => {
-    setDcaAmount(String(data.summary.dcaAmount || 0));
-    setCalculatedAmount(Number(data.summary.dcaAmount || 0));
-    setCalculatedPlan(data.dcaPlan);
+    const amount = Number(data.summary.dcaAmount || 0);
+    setDcaAmount(String(amount));
+    setCalculatedAmount(amount);
+    setCalculatedPlan(buildPlan(amount));
     setError("");
-  }, [data.dcaPlan, data.summary.dcaAmount]);
+  }, [buildPlan, data.summary.dcaAmount]);
 
   const calculatePlan = () => {
     const amount = Number(dcaAmount);
@@ -925,22 +976,8 @@ function DcaPlan({ data }: { data: Bootstrap }) {
       return;
     }
 
-    const candidates = data.radar
-      .filter((stock) => stock.radar.score >= 80)
-      .sort((a, b) => b.radar.score - a.radar.score)
-      .slice(0, 3);
-    const weights = [0.4, 0.35, 0.25].slice(0, candidates.length);
-    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
-
     setCalculatedAmount(amount);
-    setCalculatedPlan(
-      candidates.map((stock, index) => ({
-        symbol: stock.symbol,
-        name: stock.name,
-        score: stock.radar.score,
-        amount: Math.round(((amount * weights[index]) / totalWeight) / 100) * 100
-      }))
-    );
+    setCalculatedPlan(buildPlan(amount));
     setError("");
   };
 
@@ -982,10 +1019,29 @@ function DcaPlan({ data }: { data: Bootstrap }) {
         <div className="grid gap-4 md:grid-cols-3">
           {calculatedPlan.map((row) => (
             <div key={row.symbol} className="rounded-3xl border border-gold/30 bg-gold/10 p-5">
-              <div className="text-3xl font-extrabold text-gold">{row.symbol}</div>
-              <p className="mt-1 text-slate-300">{row.name}</p>
-              <div className="mt-5 text-2xl font-bold">{money(row.amount)} บาท</div>
-              <p className="text-sm text-slate-400">Score {row.score}/100</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-3xl font-extrabold text-gold">{row.symbol}</div>
+                  <p className="mt-1 text-slate-300">{row.name}</p>
+                </div>
+                <span className={`rounded-full border px-3 py-1 text-xs font-bold ${row.isWithinTolerance ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-200" : "border-rose-300/40 bg-rose-400/10 text-rose-200"}`}>
+                  {row.isWithinTolerance ? "±5%" : "เกิน 5%"}
+                </span>
+              </div>
+              <div className="mt-5 text-sm text-slate-400">งบจัดสรร</div>
+              <div className="text-2xl font-bold">{money(row.amount)} บาท</div>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <Info label="ราคา/หุ้น" value={row.price > 0 ? `${money(row.price, 2)} ฿` : "ไม่มีราคา"} />
+                <Info label="จำนวนหุ้น" value={row.shares > 0 ? `${money(row.shares)} หุ้น` : "-"} />
+                <Info label="ราคารวม" value={row.actualAmount > 0 ? `${money(row.actualAmount, 2)} ฿` : "-"} />
+                <Info label="ส่วนต่าง" value={row.shares > 0 ? `${row.variancePct >= 0 ? "+" : ""}${row.variancePct.toFixed(2)}%` : "-"} />
+              </div>
+              {!row.isWithinTolerance && (
+                <p className="mt-3 rounded-2xl border border-rose-300/30 bg-rose-400/10 p-3 text-sm text-rose-100">
+                  จำนวนหุ้นแบบ lot 100 ยังไม่อยู่ในกรอบขาด/เกิน 5% ของงบจัดสรร
+                </p>
+              )}
+              <p className="mt-4 text-sm text-slate-400">Score {row.score}/100</p>
             </div>
           ))}
           {calculatedPlan.length === 0 && !error && <p className="text-slate-400">ยังไม่มีหุ้น Score มากกว่า 80 แนะนำให้ถือเงินสดบางส่วน</p>}
