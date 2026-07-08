@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Bell,
+  Calculator,
   CalendarDays,
   CheckCircle2,
   Clock3,
@@ -904,20 +905,91 @@ function DividendHistoryModal({ data, onClose }: { data: { stock: Pick<Stock, "s
 }
 
 function DcaPlan({ data }: { data: Bootstrap }) {
+  const [dcaAmount, setDcaAmount] = useState(String(data.summary.dcaAmount || 0));
+  const [calculatedAmount, setCalculatedAmount] = useState(Number(data.summary.dcaAmount || 0));
+  const [calculatedPlan, setCalculatedPlan] = useState(data.dcaPlan);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setDcaAmount(String(data.summary.dcaAmount || 0));
+    setCalculatedAmount(Number(data.summary.dcaAmount || 0));
+    setCalculatedPlan(data.dcaPlan);
+    setError("");
+  }, [data.dcaPlan, data.summary.dcaAmount]);
+
+  const calculatePlan = () => {
+    const amount = Number(dcaAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("กรุณากรอกงบ DCA รายเดือนให้มากกว่า 0 บาท");
+      setCalculatedPlan([]);
+      return;
+    }
+
+    const candidates = data.radar
+      .filter((stock) => stock.radar.score >= 80)
+      .sort((a, b) => b.radar.score - a.radar.score)
+      .slice(0, 3);
+    const weights = [0.4, 0.35, 0.25].slice(0, candidates.length);
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
+
+    setCalculatedAmount(amount);
+    setCalculatedPlan(
+      candidates.map((stock, index) => ({
+        symbol: stock.symbol,
+        name: stock.name,
+        score: stock.radar.score,
+        amount: Math.round(((amount * weights[index]) / totalWeight) / 100) * 100
+      }))
+    );
+    setError("");
+  };
+
   return (
-    <div className="glass rounded-3xl p-5">
-      <h2 className="text-3xl font-extrabold">DCA Plan</h2>
-      <p className="mt-2 text-slate-300">งบ DCA รายเดือน: {money(data.summary.dcaAmount)} บาท</p>
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        {data.dcaPlan.map((row) => (
-          <div key={row.symbol} className="rounded-3xl border border-gold/30 bg-gold/10 p-5">
-            <div className="text-3xl font-extrabold text-gold">{row.symbol}</div>
-            <p className="mt-1 text-slate-300">{row.name}</p>
-            <div className="mt-5 text-2xl font-bold">{money(row.amount)} บาท</div>
-            <p className="text-sm text-slate-400">Score {row.score}/100</p>
+    <div className="space-y-5">
+      <div className="glass rounded-3xl p-5">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <h2 className="text-3xl font-extrabold">DCA Plan</h2>
+            <p className="mt-2 text-slate-300">กรอกงบรายเดือน แล้วกดคำนวณเพื่อจัดสัดส่วนหุ้นจาก Radar Score สูงสุด</p>
           </div>
-        ))}
-        {data.dcaPlan.length === 0 && <p className="text-slate-400">ยังไม่มีหุ้น Score มากกว่า 80 แนะนำให้ถือเงินสดบางส่วน</p>}
+          <div className="grid gap-3 md:grid-cols-[minmax(260px,420px)_auto]">
+            <label className="block">
+              <span className="mb-2 block text-slate-300">DCA รายเดือน</span>
+              <input
+                className="field"
+                inputMode="decimal"
+                min="0"
+                type="number"
+                value={dcaAmount}
+                onChange={(event) => setDcaAmount(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") calculatePlan();
+                }}
+              />
+            </label>
+            <button className="btn btn-yellow self-end" onClick={calculatePlan}>
+              <Calculator size={18} /> คำนวณแผน DCA
+            </button>
+          </div>
+        </div>
+        {error && <div className="mt-4 rounded-2xl border border-rose-400/40 bg-rose-500/10 p-4 font-bold text-rose-200">{error}</div>}
+        <div className="mt-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4 text-sm text-cyan-50">
+          ยอดที่ใช้คำนวณล่าสุด: <span className="font-extrabold text-gold">{money(calculatedAmount)} บาท</span>
+        </div>
+      </div>
+
+      <div className="glass rounded-3xl p-5">
+        <div className="grid gap-4 md:grid-cols-3">
+          {calculatedPlan.map((row) => (
+            <div key={row.symbol} className="rounded-3xl border border-gold/30 bg-gold/10 p-5">
+              <div className="text-3xl font-extrabold text-gold">{row.symbol}</div>
+              <p className="mt-1 text-slate-300">{row.name}</p>
+              <div className="mt-5 text-2xl font-bold">{money(row.amount)} บาท</div>
+              <p className="text-sm text-slate-400">Score {row.score}/100</p>
+            </div>
+          ))}
+          {calculatedPlan.length === 0 && !error && <p className="text-slate-400">ยังไม่มีหุ้น Score มากกว่า 80 แนะนำให้ถือเงินสดบางส่วน</p>}
+        </div>
       </div>
     </div>
   );
@@ -1018,7 +1090,6 @@ function SettingsView(props: {
           />
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <label className="block"><span className="mb-2 block text-slate-300">DCA รายเดือน</span><input className="field" value={props.form.monthly_dca_amount} onChange={(e) => props.setForm({ ...props.form, monthly_dca_amount: e.target.value })} /></label>
           <label className="block"><span className="mb-2 block text-slate-300">Schedule tolerance (minutes)</span><input className="field" type="number" min="0" max="30" value={props.form.cron_time_tolerance_minutes} onChange={(e) => props.setForm({ ...props.form, cron_time_tolerance_minutes: e.target.value })} /></label>
           <div className="md:col-span-2 rounded-3xl border border-sky-400/20 bg-white/5 p-5">
             <div className="mb-4 flex items-center gap-2 font-extrabold text-white"><Clock3 className="text-gold" /> Price Update Schedule</div>
