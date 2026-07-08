@@ -1,3 +1,5 @@
+import type { DcaPlanItem } from "@/lib/dca/dca-plan";
+
 export type RadarFlexStock = {
   symbol: string;
   price: number;
@@ -111,7 +113,45 @@ function stockRow(stock: RadarFlexStock, index: number) {
   };
 }
 
-export function buildDailyRadarFlexPayload(target: string, updatedCount: number, stocks: RadarFlexStock[]) {
+function dcaRow(item: DcaPlanItem, index: number) {
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "xs",
+    paddingAll: "10px",
+    margin: index === 0 ? "none" : "sm",
+    backgroundColor: "#172554",
+    cornerRadius: "14px",
+    contents: [
+      {
+        type: "box",
+        layout: "horizontal",
+        contents: [
+          { type: "text", text: item.symbol, flex: 1, size: "md", weight: "bold", color: "#FACC15" },
+          { type: "text", text: `Score ${item.score}`, flex: 0, size: "xs", weight: "bold", color: "#BAE6FD", align: "end" }
+        ]
+      },
+      {
+        type: "box",
+        layout: "horizontal",
+        contents: [
+          { type: "text", text: `ราคา ${money(item.price)} ฿`, size: "xs", color: "#E0F2FE" },
+          { type: "text", text: `${new Intl.NumberFormat("th-TH").format(item.shares)} หุ้น`, size: "xs", color: "#FFFFFF", weight: "bold", align: "end" }
+        ]
+      },
+      {
+        type: "box",
+        layout: "horizontal",
+        contents: [
+          { type: "text", text: `งบ ${money(item.amount)} ฿`, size: "xs", color: "#CBD5E1" },
+          { type: "text", text: `รวม ${money(item.actualAmount)} ฿`, size: "xs", color: item.isWithinTolerance ? "#86EFAC" : "#FDA4AF", weight: "bold", align: "end" }
+        ]
+      }
+    ]
+  };
+}
+
+export function buildDailyRadarFlexPayload(target: string, updatedCount: number, stocks: RadarFlexStock[], dcaPlan: DcaPlanItem[] = []) {
   return {
     to: target,
     messages: [
@@ -162,6 +202,14 @@ export function buildDailyRadarFlexPayload(target: string, updatedCount: number,
                   { type: "separator", margin: "md", color: "#1E3A5F" },
                   { type: "text", text: "หุ้นเด่นวันนี้", color: "#FFFFFF", size: "lg", weight: "bold", margin: "sm" },
                   ...stocks.slice(0, 5).map(stockRow),
+                  ...(dcaPlan.length > 0
+                    ? [
+                        { type: "separator", margin: "lg", color: "#1E3A5F" },
+                        { type: "text", text: "DCA Plan", color: "#FFFFFF", size: "lg", weight: "bold", margin: "sm" },
+                        { type: "text", text: "ราคา/หุ้น • จำนวนหุ้น lot 100 • ราคารวม", color: "#94A3B8", size: "xs", wrap: true },
+                        ...dcaPlan.slice(0, 3).map(dcaRow)
+                      ]
+                    : []),
                   {
                     type: "box",
                     layout: "vertical",

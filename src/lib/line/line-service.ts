@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { buildDailyRadarFlexPayload, type RadarFlexStock } from "@/lib/line/daily-radar-flex";
+import type { DcaPlanItem } from "@/lib/dca/dca-plan";
 
 type LineOptions = { force?: boolean };
 
@@ -59,12 +60,12 @@ export async function pushLineMessage(title: string, message: string, options: L
   );
 }
 
-export async function pushDailyRadarFlexMessage(updatedCount: number, stocks: RadarFlexStock[]) {
+export async function pushDailyRadarFlexMessage(updatedCount: number, stocks: RadarFlexStock[], dcaPlan: DcaPlanItem[] = []) {
   const title = "DiviRadar Daily Radar";
   const message = `Updated ${updatedCount} stocks. Top: ${stocks.map((stock) => stock.symbol).join(", ")}`;
   const config = await getLineConfig({}, title, message);
   if (config.skipped) return config.result;
 
-  const payload = buildDailyRadarFlexPayload(config.target, updatedCount, stocks);
+  const payload = buildDailyRadarFlexPayload(config.target, updatedCount, stocks, dcaPlan);
   return sendLinePayload(title, message, payload, { force: true });
 }

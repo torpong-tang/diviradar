@@ -35,6 +35,7 @@ import { api } from "@/components/diviradar/client-api";
 import { dateText, dateTimeText, displayDividend, money, pct, sortIcon } from "@/components/diviradar/formatters";
 import { LoginView } from "@/components/diviradar/login-view";
 import { XdHistoryMonthTable } from "@/components/diviradar/xd-history-month-table";
+import { buildDcaPlan, type DcaPlanItem } from "@/lib/dca/dca-plan";
 import type {
   AlertRow,
   Bootstrap,
@@ -904,60 +905,22 @@ function DividendHistoryModal({ data, onClose }: { data: { stock: Pick<Stock, "s
   );
 }
 
-type DcaPlanCard = Bootstrap["dcaPlan"][number] & {
-  price: number;
-  shares: number;
-  actualAmount: number;
-  variancePct: number;
-  isWithinTolerance: boolean;
-};
-
-function calculateLotPurchase(allocatedAmount: number, price: number) {
-  if (!Number.isFinite(allocatedAmount) || allocatedAmount <= 0 || !Number.isFinite(price) || price <= 0) {
-    return { shares: 0, actualAmount: 0, variancePct: 0, isWithinTolerance: false };
-  }
-
-  const rawLots = allocatedAmount / (price * 100);
-  const candidates = Array.from(new Set([Math.floor(rawLots), Math.round(rawLots), Math.ceil(rawLots)]))
-    .filter((lots) => lots > 0)
-    .map((lots) => {
-      const shares = lots * 100;
-      const actualAmount = shares * price;
-      const variancePct = ((actualAmount - allocatedAmount) / allocatedAmount) * 100;
-      return { shares, actualAmount, variancePct, isWithinTolerance: Math.abs(variancePct) <= 5 };
-    })
-    .sort((a, b) => Math.abs(a.variancePct) - Math.abs(b.variancePct));
-
-  return candidates[0] ?? { shares: 0, actualAmount: 0, variancePct: 0, isWithinTolerance: false };
-}
-
 function DcaPlan({ data }: { data: Bootstrap }) {
   const [dcaAmount, setDcaAmount] = useState(String(data.summary.dcaAmount || 0));
   const [calculatedAmount, setCalculatedAmount] = useState(Number(data.summary.dcaAmount || 0));
-  const [calculatedPlan, setCalculatedPlan] = useState<DcaPlanCard[]>([]);
+  const [calculatedPlan, setCalculatedPlan] = useState<DcaPlanItem[]>([]);
   const [error, setError] = useState("");
 
-  const buildPlan = useCallback((amount: number): DcaPlanCard[] => {
-    const candidates = data.radar
-      .filter((stock) => stock.radar.score >= 80)
-      .sort((a, b) => b.radar.score - a.radar.score)
-      .slice(0, 3);
-    const weights = [0.4, 0.35, 0.25].slice(0, candidates.length);
-    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
-
-    return candidates.map((stock, index) => {
-      const allocatedAmount = Math.round(((amount * weights[index]) / totalWeight) / 100) * 100;
-      const price = stock.latestPrice?.price || 0;
-      const lot = calculateLotPurchase(allocatedAmount, price);
-      return {
+  const buildPlan = useCallback((amount: number): DcaPlanItem[] => {
+    return buildDcaPlan(
+      data.radar.map((stock) => ({
         symbol: stock.symbol,
         name: stock.name,
         score: stock.radar.score,
-        amount: allocatedAmount,
-        price,
-        ...lot
-      };
-    });
+        price: stock.latestPrice?.price || 0
+      })),
+      amount
+    );
   }, [data.radar]);
 
   useEffect(() => {

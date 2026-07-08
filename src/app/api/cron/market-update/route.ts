@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { updateAllStockPrices } from "@/lib/market-data/market-data-service";
 import { calculateRadarScore } from "@/lib/radar/calculate-score";
 import { pushDailyRadarFlexMessage } from "@/lib/line/line-service";
+import { buildDcaPlan } from "@/lib/dca/dca-plan";
 
 const dayMap: Record<string, string> = {
   Sun: "0",
@@ -103,6 +104,16 @@ export async function POST(req: Request) {
 
   let lineResult: unknown = null;
   if (lineNotifyEnabled === "true") {
+    const dcaAmount = Number(settings.monthly_dca_amount || 20000);
+    const dcaPlan = buildDcaPlan(
+      radar.map((row) => ({
+        symbol: row.stock.symbol,
+        name: row.stock.name,
+        score: row.radar.score,
+        price: row.stock.prices[0]?.price || 0
+      })),
+      dcaAmount
+    );
     lineResult = await pushDailyRadarFlexMessage(
       updated.length,
       radar.slice(0, 5).map((row) => ({
@@ -112,7 +123,8 @@ export async function POST(req: Request) {
         yieldPct: row.radar.yieldPct,
         status: row.radar.status,
         tone: row.radar.tone
-      }))
+      })),
+      dcaPlan
     );
   }
 
