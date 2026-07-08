@@ -8,7 +8,6 @@ import {
   Clock3,
   CircleDollarSign,
   Eye,
-  EyeOff,
   History,
   Hourglass,
   LineChart,
@@ -31,94 +30,20 @@ import {
   AlertTriangle
 } from "lucide-react";
 import { ConfirmModal, Modal, Spinner } from "@/components/ui";
-
-type RadarTone = "green" | "yellow" | "red";
-
-type Stock = {
-  id: number;
-  symbol: string;
-  name: string;
-  sector: string;
-  yahooSymbol: string;
-  dividendPerShare: number | null;
-  targetBuyPrice: number | null;
-  fairPriceLow: number | null;
-  fairPriceHigh: number | null;
-  stabilityScore: number;
-  latestPrice: { price: number; change?: number; changePercent?: number; volume?: number; priceDate: string } | null;
-  dividends: { id: number; xdDate: string | null; paymentDate: string | null; dividendAmount: number; dividendYear: number; dividendType?: string | null }[];
-  radar: { score: number; status: string; tone: RadarTone; yieldPct: number; reasons: string[] };
-};
-
-type PortfolioRow = {
-  id: number;
-  stockId: number;
-  shares: number;
-  avgCost: number;
-  note?: string | null;
-  stock: { symbol: string; name: string; dividendPerShare: number | null };
-  currentPrice: number;
-  currentValue: number;
-  costValue: number;
-  gainLoss: number;
-  gainLossPct: number;
-  estimatedDividend: number;
-  monthlyDividend: number;
-  yieldOnCost: number;
-};
-
-type AlertRow = {
-  id: number;
-  stockId: number;
-  alertType: string;
-  targetValue?: number | null;
-  isActive: boolean;
-  stock: { symbol: string };
-};
-
-type DividendHistoryRow = {
-  id: number;
-  xdDate: string | null;
-  paymentDate: string | null;
-  dividendAmount: number;
-  dividendYear: number;
-  dividendType?: string | null;
-};
-
-type WatchlistSortKey = "symbol" | "price" | "yield" | "score" | "status";
-type SortDirection = "asc" | "desc";
-
-type SettingsForm = {
-  monthly_dca_amount: string;
-  auto_price_update_enabled: string;
-  price_cron_days: string;
-  price_cron_times: string;
-  cron_time_tolerance_minutes: string;
-  line_notify_enabled: string;
-  line_channel_token: string;
-  line_target_id: string;
-  lineUserId: string;
-};
-
-type Bootstrap = {
-  user: { id: number; email: string; name?: string | null; lineUserId?: string | null };
-  radar: Stock[];
-  portfolioRows: PortfolioRow[];
-  alerts: AlertRow[];
-  settings: { key: string; value: string }[];
-  notificationLogs: { id: number; title: string; message: string; channel: string; status: string; sentAt: string }[];
-  summary: {
-    watchlistCount: number;
-    buyZoneCount: number;
-    portfolioValue: number;
-    annualDividend: number;
-    monthlyDividend: number;
-    dcaAmount: number;
-    lastPriceUpdatedAt: string | null;
-    lastSettradeXdSyncAt: string | null;
-  };
-  dcaPlan: { symbol: string; name: string; score: number; amount: number }[];
-};
+import { api } from "@/components/diviradar/client-api";
+import { dateText, dateTimeText, displayDividend, money, pct, sortIcon } from "@/components/diviradar/formatters";
+import { LoginView } from "@/components/diviradar/login-view";
+import type {
+  AlertRow,
+  Bootstrap,
+  DividendHistoryRow,
+  PortfolioRow,
+  RadarTone,
+  SettingsForm,
+  SortDirection,
+  Stock,
+  WatchlistSortKey
+} from "@/components/diviradar/types";
 
 const nav = [
   { key: "dashboard", label: "Dashboard", icon: LineChart },
@@ -139,50 +64,6 @@ const cronDays = [
   { value: "6", short: "Sat", label: "เสาร์" },
   { value: "0", short: "Sun", label: "อาทิตย์" }
 ];
-
-function money(value: number, fraction = 0) {
-  return new Intl.NumberFormat("th-TH", { maximumFractionDigits: fraction, minimumFractionDigits: fraction }).format(value || 0);
-}
-
-function pct(value: number) {
-  return `${(value || 0).toFixed(1)}%`;
-}
-
-function dateText(value?: string | null) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("th-TH", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
-}
-
-function dateTimeText(value?: string | null) {
-  if (!value) return "ยังไม่มีข้อมูล";
-  return new Intl.DateTimeFormat("th-TH", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).format(new Date(value));
-}
-
-function displayDividend(stock: Stock) {
-  const withDates = stock.dividends
-    .filter((dividend) => Boolean(dividend.xdDate))
-    .map((dividend) => ({ dividend, time: new Date(String(dividend.xdDate)).getTime() }))
-    .filter((item) => Number.isFinite(item.time));
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const next = withDates
-    .filter((item) => item.time >= today.getTime())
-    .sort((a, b) => a.time - b.time)[0];
-  const latest = withDates.sort((a, b) => b.time - a.time)[0];
-  return next?.dividend || latest?.dividend || null;
-}
-
-function toneClass(tone: RadarTone) {
-  return tone === "green" ? "status-green" : tone === "yellow" ? "status-yellow" : "status-red";
-}
 
 function StatusPill({ tone, label }: { tone: RadarTone; label: string }) {
   const config =
@@ -212,35 +93,12 @@ function StatusPill({ tone, label }: { tone: RadarTone; label: string }) {
   );
 }
 
-function sortIcon(active: boolean, direction: SortDirection) {
-  return active ? (direction === "asc" ? "↑" : "↓") : "↕";
-}
-
-function appPath(path: string) {
-  if (path.startsWith("http")) return path;
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
-  return `${basePath}${path.startsWith("/") ? path : `/${path}`}`;
-}
-
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(appPath(path), {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) }
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error || "Request failed");
-  }
-  return response.json();
-}
-
 export function DiviRadarApp() {
   const [data, setData] = useState<Bootstrap | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<(typeof nav)[number]["key"]>("dashboard");
   const [login, setLogin] = useState({ email: "torpong.t@gmail.com", password: "" });
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [sector, setSector] = useState("all");
@@ -366,41 +224,7 @@ export function DiviRadarApp() {
 
   if (!data) {
     return (
-      <main className="flex min-h-screen items-center justify-center p-6">
-        <form onSubmit={doLogin} className="glass w-full max-w-md rounded-3xl p-8 shadow-glow">
-          <div className="mb-8">
-            <div className="mb-4 inline-flex rounded-2xl bg-gold/15 p-3 text-gold">
-              <PieChart size={34} />
-            </div>
-            <h1 className="text-3xl font-extrabold">DiviRadar</h1>
-            <p className="mt-2 text-slate-300">Dividend Copilot สำหรับพอร์ตหุ้นปันผลไทย</p>
-          </div>
-          {error && <div className="mb-4 rounded-2xl border border-rose-400/30 bg-rose-500/12 p-3 text-rose-100">{error}</div>}
-          <label className="mb-2 block font-semibold text-slate-200">Email</label>
-          <input className="field mb-4" value={login.email} onChange={(e) => setLogin({ ...login, email: e.target.value })} />
-          <label className="mb-2 block font-semibold text-slate-200">Password</label>
-          <div className="relative mb-6">
-            <input
-              className="field pr-12"
-              type={showPassword ? "text" : "password"}
-              value={login.password}
-              onChange={(e) => setLogin({ ...login, password: e.target.value })}
-            />
-            <button
-              type="button"
-              aria-label="Toggle password"
-              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-300"
-              onClick={() => setShowPassword((x) => !x)}
-            >
-              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-            </button>
-          </div>
-          <button className="btn btn-yellow w-full" disabled={busy}>
-            {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
-            Login
-          </button>
-        </form>
-      </main>
+      <LoginView busy={busy} error={error} login={login} onLoginChange={setLogin} onSubmit={doLogin} />
     );
   }
 
