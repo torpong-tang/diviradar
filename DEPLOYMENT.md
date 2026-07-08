@@ -11,6 +11,13 @@ npm run lint
 NEXT_PUBLIC_BASE_PATH=/diviradar npm run build
 ```
 
+ก่อน deploy production ควรตรวจ:
+
+- GitHub remote เป็น SSH ไม่ใช่ token URL
+- `ssh -T git@github.com` หรือ SSH-over-443 ใช้งานได้
+- ไม่มี `.env`, database, backup, token หรือ temporary credential อยู่ใน `git status`
+- อ่าน [SWOT_AND_ROADMAP.md](./SWOT_AND_ROADMAP.md) หากมีการเปลี่ยน data source, cron, LINE OA หรือ scoring logic
+
 GitHub remote should use SSH. If the production server cannot reach `github.com:22`, keep SSH but use GitHub SSH-over-443:
 
 ```bash
@@ -72,6 +79,24 @@ pm2 status diviradar
 - Switch ใน Settings เป็นตัวควบคุมว่า endpoint จะทำงานจริงหรือ skip
 - Days/Times ใน Settings เป็นตัวกำหนด schedule จริงของ app
 - หากต้องการบังคับรันทันทีสำหรับ admin/debug ใช้ `POST /api/cron/market-update?force=1`
+- Cron ที่เรียกทุก 5 นาทีไม่ควรทำให้ server หนัก เพราะ app จะ skip หากอยู่นอกวัน/เวลาที่ตั้งไว้ แต่ควรตรวจ `NotificationLog` เป็นระยะเพื่อไม่ให้ log โตเกินจำเป็น
+
+## LINE OA Verification
+
+หลังตั้งค่า LINE OA ใน Settings:
+
+1. กรอก LINE Channel Access Token และ Target ID
+2. เปิด switch LINE notification
+3. กดปุ่มทดสอบ LINE
+4. ตรวจว่าได้รับ Flex Message ใน LINE OA
+5. ตรวจ `NotificationLog` ว่ามีสถานะส่งสำเร็จหรือ error
+
+Daily Radar จะถูกส่งจาก cron เฉพาะเมื่อ:
+
+- Auto price update เปิดอยู่
+- เวลาตรงกับ schedule ใน Settings หรือเรียก endpoint ด้วย `force=1`
+- LINE notification เปิดอยู่
+- token/target id ถูกต้อง
 
 ## Settrade XD Calendar
 
@@ -90,6 +115,34 @@ POST /api/dividends/settrade/history
 ```
 
 endpoint นี้จะดึงย้อนหลังเฉพาะ symbol ที่เลือก, upsert ลง SQLite และคืน 4 รายการล่าสุดสำหรับ modal ประวัติ
+
+ตาราง `XD History by Month` ใช้ข้อมูล dividend history ที่อยู่ใน SQLite และแสดงเฉพาะ 4 งวดย้อนหลังล่าสุดต่อหุ้นจากวันที่ปัจจุบัน เพื่อป้องกันหน้าจอรกเกินไป หากต้องการให้ตารางครบมากกว่านี้ต้องแก้ logic ใน `src/components/diviradar/xd-history-month-table.tsx`
+
+## Backup and Restore
+
+ควร backup SQLite ก่อน deploy หรือ migration ทุกครั้ง:
+
+```bash
+mkdir -p /var/backups/2startup/diviradar
+sqlite3 /var/lib/2startup/diviradar/diviradar.db ".backup '/var/backups/2startup/diviradar/diviradar-$(date +%Y%m%d-%H%M%S).db'"
+ls -lh /var/backups/2startup/diviradar
+```
+
+Restore drill ขั้นต่ำ:
+
+```bash
+cp /var/lib/2startup/diviradar/diviradar.db /var/lib/2startup/diviradar/diviradar.db.before-restore-test
+sqlite3 /var/backups/2startup/diviradar/<backup-file>.db "pragma integrity_check;"
+```
+
+ห้าม restore ทับ production database ขณะ PM2 ยังเขียนข้อมูลอยู่ หากจำเป็นต้อง restore จริง ให้หยุดเฉพาะ process `diviradar`, restore, ตรวจ integrity แล้วค่อย start ใหม่
+
+```bash
+pm2 stop diviradar
+cp /var/backups/2startup/diviradar/<backup-file>.db /var/lib/2startup/diviradar/diviradar.db
+sqlite3 /var/lib/2startup/diviradar/diviradar.db "pragma integrity_check;"
+pm2 start diviradar
+```
 
 ## Nginx
 
@@ -117,6 +170,35 @@ curl -I http://127.0.0.1:3010/diviradar
 curl -I https://2startup.cloud/diviradar
 ```
 
+หลัง deploy ควรตรวจจาก UI:
+
+- Login ได้
+- Dashboard แสดงราคาและ latest price data time
+- Watchlist sort/filter ใช้งานได้
+- Dividend Calendar แสดง card และ `XD History by Month`
+- Settings เปิด/ปิด cron และ LINE switch ได้
+- ปุ่มทดสอบ LINE ส่งข้อความได้ หากตั้งค่า LINE OA แล้ว
+
+## Test Checklist
+
+ยังไม่มี Playwright test suite ถาวรใน repo จึงควรทดสอบ manual ก่อน production ทุกครั้ง:
+
+```bash
+npm run lint
+NEXT_PUBLIC_BASE_PATH=/diviradar npm run build
+```
+
+กรณีต่อยอดควรเพิ่ม Playwright test ถาวรสำหรับ:
+
+- Login/logout
+- Manual update prices
+- Watchlist filter/sort
+- Dividend Calendar filter และ XD History by Month
+- Portfolio add/delete
+- Settings save
+- LINE test mock หรือ test mode
+- Cron endpoint unauthorized/authorized cases
+
 ## Security Checklist
 
 - Git remote ต้องใช้ SSH ไม่ใช้ token ใน URL
@@ -126,3 +208,6 @@ curl -I https://2startup.cloud/diviradar
 - Rotate/revoke token ที่เคยเปิดเผย
 - Backup SQLite ก่อน deploy หรือ migration
 - Restart เฉพาะ PM2 process `diviradar`
+- ตั้ง `CRON_SECRET` และ `JWT_SECRET` คนละค่า และต้องเป็น secret ที่เดายาก
+- จำกัด permission ของ `/var/lib/2startup/diviradar` และ `/var/backups/2startup/diviradar`
+- ตรวจว่า LINE token ไม่ถูก print ใน log หรือ commit history
