@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { updateAllStockPrices } from "@/lib/market-data/market-data-service";
 import { calculateRadarScore } from "@/lib/radar/calculate-score";
-import { pushLineMessage } from "@/lib/line/line-service";
+import { pushDailyRadarFlexMessage } from "@/lib/line/line-service";
 
 const dayMap: Record<string, string> = {
   Sun: "0",
@@ -99,12 +99,21 @@ export async function POST(req: Request) {
   const radar = stocks
     .map((stock) => ({ stock, radar: calculateRadarScore(stock) }))
     .sort((a, b) => b.radar.score - a.radar.score);
-  const top = radar.slice(0, 5).map((row) => `${row.stock.symbol} Score ${row.radar.score} Yield ${row.radar.yieldPct.toFixed(1)}%`).join("\n");
   const lineNotifyEnabled = (await prisma.setting.findUnique({ where: { key: "line_notify_enabled" } }))?.value ?? "false";
 
   let lineResult: unknown = null;
   if (lineNotifyEnabled === "true") {
-    lineResult = await pushLineMessage("📈 DiviRadar Daily Radar", `อัปเดตราคาหุ้นสำเร็จ ${updated.length} รายการ\n\nหุ้นเด่นวันนี้:\n${top}`);
+    lineResult = await pushDailyRadarFlexMessage(
+      updated.length,
+      radar.slice(0, 5).map((row) => ({
+        symbol: row.stock.symbol,
+        price: row.stock.prices[0]?.price || 0,
+        score: row.radar.score,
+        yieldPct: row.radar.yieldPct,
+        status: row.radar.status,
+        tone: row.radar.tone
+      }))
+    );
   }
 
   await prisma.notificationLog.create({
