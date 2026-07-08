@@ -164,7 +164,9 @@ export function XdHistoryMonthTable({ stocks }: { stocks: Stock[] }) {
                           title={`${entry.symbol} • XD ${dateText(entry.xdDate)} • Payment ${dateText(entry.paymentDate)} • ${money(entry.dividendAmount, 4)} ฿`}
                           className="mx-auto inline-flex max-w-full flex-col rounded-xl border border-cyan-300/25 bg-night/85 px-3 py-2 text-left shadow-[0_0_18px_rgba(34,211,238,0.12)]"
                         >
-                          <span className="truncate text-base font-extrabold text-white">{entry.symbol}</span>
+                          <span className="truncate text-base font-extrabold text-white">
+                            {entry.symbol} <span className="text-sm text-gold">({money(entry.dividendAmount, 4)} ฿)</span>
+                          </span>
                           <span className="truncate text-xs text-slate-400">{dateText(entry.xdDate)}</span>
                         </div>
                       ) : (
