@@ -62,6 +62,7 @@ export type SettingsForm = {
   cron_time_tolerance_minutes: string;
   line_notify_enabled: string;
   line_channel_token: string;
+  line_channel_token_configured: boolean;
   line_target_id: string;
   lineUserId: string;
 };

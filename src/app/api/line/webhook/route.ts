@@ -1,4 +1,6 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { logNotification } from "@/lib/notification-log";
 
 type LineWebhookEvent = {
   type?: string;
@@ -14,6 +16,12 @@ type LineWebhookEvent = {
 
 async function getLineChannelToken() {
   return process.env.LINE_CHANNEL_ACCESS_TOKEN || (await prisma.setting.findUnique({ where: { key: "line_channel_token" } }))?.value || "";
+}
+
+function verifyLineSignature(rawBody: string, signature: string, channelSecret: string) {
+  const expected = createHmac("sha256", channelSecret).update(rawBody).digest();
+  const received = Buffer.from(signature, "base64");
+  return received.length === expected.length && timingSafeEqual(received, expected);
 }
 
 function sourceIdText(event: LineWebhookEvent) {
@@ -36,13 +44,11 @@ function sourceIdText(event: LineWebhookEvent) {
 async function replyLineText(replyToken: string, text: string) {
   const token = await getLineChannelToken();
   if (!token) {
-    await prisma.notificationLog.create({
-      data: {
+    await logNotification({
         title: "LINE Webhook /id",
         message: "Cannot reply /id because LINE channel token is not configured.",
         channel: "LINE",
         status: "SKIPPED_NO_TOKEN"
-      }
     });
     return { ok: false, status: "SKIPPED_NO_TOKEN" };
   }
@@ -59,30 +65,42 @@ async function replyLineText(replyToken: string, text: string) {
     })
   });
 
-  await prisma.notificationLog.create({
-    data: {
+  await logNotification({
       title: "LINE Webhook /id",
       message: text.slice(0, 1000),
       channel: "LINE",
       status: response.ok ? "REPLIED" : `FAILED_${response.status}`
-    }
   });
 
   return { ok: response.ok, status: response.status };
 }
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
-  await prisma.notificationLog.create({
-    data: {
+  const channelSecret = process.env.LINE_CHANNEL_SECRET;
+  if (!channelSecret) {
+    return Response.json({ error: "LINE webhook is not configured" }, { status: 503 });
+  }
+
+  const rawBody = await req.text();
+  const signature = req.headers.get("x-line-signature") || "";
+  if (!signature || !verifyLineSignature(rawBody, signature, channelSecret)) {
+    return Response.json({ error: "Invalid LINE signature" }, { status: 401 });
+  }
+
+  let body: { events?: unknown };
+  try {
+    body = JSON.parse(rawBody || "{}");
+  } catch {
+    return Response.json({ error: "Invalid JSON payload" }, { status: 400 });
+  }
+  const events = Array.isArray(body.events) ? (body.events as LineWebhookEvent[]) : [];
+  await logNotification({
       title: "LINE Webhook",
-      message: JSON.stringify(body).slice(0, 1000),
+      message: `Received ${events.length} verified event(s): ${events.map((event) => event.type || "unknown").join(", ")}`,
       channel: "LINE",
-      status: "RECEIVED"
-    }
+      status: "VERIFIED"
   });
 
-  const events = Array.isArray(body.events) ? (body.events as LineWebhookEvent[]) : [];
   for (const event of events) {
     const text = event.message?.type === "text" ? event.message.text?.trim() : "";
     if (event.type === "message" && event.replyToken && text === "/id") {

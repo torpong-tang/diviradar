@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { withAuth } from "@/lib/api";
 import { calculateRadarScore } from "@/lib/radar/calculate-score";
 import { annualDividend } from "@/lib/dividend/dividend-yield";
+import { publicSettings } from "@/lib/settings";
 
 export async function GET() {
   return withAuth(async () => {
@@ -77,6 +78,6 @@ export async function GET() {
       amount: Math.round((summary.dcaAmount * (index === 0 ? 0.4 : index === 1 ? 0.35 : 0.25)) / 100) * 100
     }));
 
-    return Response.json({ user, radar, portfolioRows, alerts, settings, notificationLogs, summary, dcaPlan });
+    return Response.json({ user, radar, portfolioRows, alerts, settings: publicSettings(settings), notificationLogs, summary, dcaPlan });
   });
 }

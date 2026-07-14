@@ -1,15 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { buildDailyRadarFlexPayload, type RadarFlexStock } from "@/lib/line/daily-radar-flex";
 import type { DcaPlanItem } from "@/lib/dca/dca-plan";
+import { logNotification } from "@/lib/notification-log";
 
 type LineOptions = { force?: boolean };
 
 async function getLineConfig(options: LineOptions, title: string, message: string) {
   const notifyEnabled = (await prisma.setting.findUnique({ where: { key: "line_notify_enabled" } }))?.value ?? "false";
   if (!options.force && notifyEnabled !== "true") {
-    await prisma.notificationLog.create({
-      data: { title, message, channel: "LINE", status: "SKIPPED_DISABLED" }
-    });
+    await logNotification({ title, message, channel: "LINE", status: "SKIPPED_DISABLED" });
     return { skipped: true as const, result: { ok: false, status: "SKIPPED_DISABLED" } };
   }
 
@@ -17,9 +16,7 @@ async function getLineConfig(options: LineOptions, title: string, message: strin
   const target = process.env.LINE_TARGET_ID || (await prisma.setting.findUnique({ where: { key: "line_target_id" } }))?.value;
 
   if (!token || !target) {
-    await prisma.notificationLog.create({
-      data: { title, message, channel: "LINE", status: "SKIPPED_NO_CONFIG" }
-    });
+    await logNotification({ title, message, channel: "LINE", status: "SKIPPED_NO_CONFIG" });
     return { skipped: true as const, result: { ok: false, status: "SKIPPED_NO_CONFIG" } };
   }
 
@@ -39,9 +36,7 @@ async function sendLinePayload(title: string, message: string, payload: unknown,
     body: JSON.stringify(payload)
   });
 
-  await prisma.notificationLog.create({
-    data: { title, message, channel: "LINE", status: response.ok ? "SENT" : `FAILED_${response.status}` }
-  });
+  await logNotification({ title, message, channel: "LINE", status: response.ok ? "SENT" : `FAILED_${response.status}` });
 
   return { ok: response.ok, status: response.status };
 }

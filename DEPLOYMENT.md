@@ -34,8 +34,13 @@ DATABASE_URL="file:/var/lib/2startup/diviradar/diviradar.db"
 JWT_SECRET="CHANGE_TO_STRONG_RANDOM_SECRET_MIN_32_CHARS"
 NEXT_PUBLIC_BASE_PATH="/diviradar"
 LINE_CHANNEL_ACCESS_TOKEN=""
+LINE_CHANNEL_SECRET="CHANGE_TO_LINE_MESSAGING_API_CHANNEL_SECRET"
 LINE_TARGET_ID=""
 CRON_SECRET="CHANGE_TO_RANDOM_CRON_SECRET"
+INITIAL_ADMIN_EMAIL=""
+INITIAL_ADMIN_PASSWORD=""
+NOTIFICATION_LOG_RETENTION_DAYS="30"
+NOTIFICATION_LOG_MAX_ROWS="1000"
 STANDALONE="true"
 ```
 
@@ -53,6 +58,7 @@ cd /var/www/apps/diviradar
 npm ci
 npx prisma generate
 npx prisma db push
+# ใช้เฉพาะ first deployment; ไม่ลบข้อมูลและไม่เปลี่ยน password ผู้ใช้เดิม
 npm run db:seed
 NEXT_PUBLIC_BASE_PATH=/diviradar npm run build
 ```
@@ -79,7 +85,8 @@ pm2 status diviradar
 - Switch ใน Settings เป็นตัวควบคุมว่า endpoint จะทำงานจริงหรือ skip
 - Days/Times ใน Settings เป็นตัวกำหนด schedule จริงของ app
 - หากต้องการบังคับรันทันทีสำหรับ admin/debug ใช้ `POST /api/cron/market-update?force=1`
-- Cron ที่เรียกทุก 5 นาทีไม่ควรทำให้ server หนัก เพราะ app จะ skip หากอยู่นอกวัน/เวลาที่ตั้งไว้ แต่ควรตรวจ `NotificationLog` เป็นระยะเพื่อไม่ให้ log โตเกินจำเป็น
+- Cron ที่เรียกทุก 5 นาทีไม่ควรทำให้ server หนัก เพราะ app จะ skip หากอยู่นอกวัน/เวลาที่ตั้งไว้ และจะไม่บันทึก routine skip ลง `NotificationLog`
+- `NotificationLog` เก็บตาม `NOTIFICATION_LOG_RETENTION_DAYS` และไม่เกิน `NOTIFICATION_LOG_MAX_ROWS`; ค่า default คือ 30 วัน/1,000 รายการ
 
 ## LINE OA Verification
 
@@ -120,7 +127,16 @@ Command: /id
 - LINE Developers Console ต้องเปิด `Use webhook`
 - ต้องเปิด `Allow bot to join group chats` หากต้องการใช้ใน group
 - ต้องตั้ง LINE Channel Access Token ผ่าน env `LINE_CHANNEL_ACCESS_TOKEN` หรือ Settings `line_channel_token`
+- ต้องตั้ง `LINE_CHANNEL_SECRET` จาก Messaging API channel เพื่อให้ระบบตรวจ `x-line-signature`; หากไม่ตั้ง webhook จะตอบ `503`
+- API จะไม่คืนค่า LINE Channel Access Token เดิมกลับมายัง browser การกรอกช่อง token ใหม่คือการแทนค่าของเดิมเท่านั้น
 - ห้าม log หรือ commit channel token จริงลง Git
+
+## Seed Safety
+
+- `npm run db:seed` เป็น production-safe: ไม่ลบข้อมูลและไม่เปลี่ยนรหัสผ่านผู้ใช้เดิม
+- การสร้างผู้ดูแลครั้งแรกต้องส่ง `INITIAL_ADMIN_EMAIL` และ `INITIAL_ADMIN_PASSWORD` ที่ยาวอย่างน้อย 12 ตัวอักษรผ่าน environment
+- `npm run db:seed:demo` เป็นคำสั่ง destructive สำหรับ development เท่านั้น และต้องใช้ `DEMO_ADMIN_EMAIL`/`DEMO_ADMIN_PASSWORD`
+- ห้ามรัน `db:seed:demo` กับ `DATABASE_URL` ของ production
 
 ## Settrade XD Calendar
 

@@ -123,6 +123,8 @@ model NotificationLog {
   channel   String
   status    String
   sentAt    DateTime @default(now())
+
+  @@index([sentAt])
 }
 
 model Setting {

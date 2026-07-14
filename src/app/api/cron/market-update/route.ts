@@ -3,6 +3,7 @@ import { updateAllStockPrices } from "@/lib/market-data/market-data-service";
 import { calculateRadarScore } from "@/lib/radar/calculate-score";
 import { pushDailyRadarFlexMessage } from "@/lib/line/line-service";
 import { buildDcaPlan } from "@/lib/dca/dca-plan";
+import { logNotification } from "@/lib/notification-log";
 
 const dayMap: Record<string, string> = {
   Sun: "0",
@@ -64,28 +65,12 @@ export async function POST(req: Request) {
   const settings = Object.fromEntries(settingRows.map((setting) => [setting.key, setting.value]));
   const autoEnabled = settings.auto_price_update_enabled ?? "false";
   if (autoEnabled !== "true") {
-    await prisma.notificationLog.create({
-      data: {
-        title: "DiviRadar Cron",
-        message: "Auto price update is disabled in Settings.",
-        channel: "SYSTEM",
-        status: "SKIPPED_DISABLED"
-      }
-    });
     return Response.json({ ok: true, skipped: true, reason: "AUTO_PRICE_UPDATE_DISABLED" });
   }
 
   const force = new URL(req.url).searchParams.get("force") === "1";
   const scheduleGate = shouldRunNow(settings, force);
   if (!scheduleGate.ok) {
-    await prisma.notificationLog.create({
-      data: {
-        title: "DiviRadar Cron",
-        message: `Skipped by app schedule. ${scheduleGate.reason}`,
-        channel: "SYSTEM",
-        status: "SKIPPED_SCHEDULE"
-      }
-    });
     return Response.json({ ok: true, skipped: true, reason: scheduleGate.reason });
   }
 
@@ -128,13 +113,11 @@ export async function POST(req: Request) {
     );
   }
 
-  await prisma.notificationLog.create({
-    data: {
+  await logNotification({
       title: "DiviRadar Cron",
       message: `Updated ${updated.length} stock prices. LINE=${lineNotifyEnabled}`,
       channel: "SYSTEM",
       status: "DONE"
-    }
   });
 
   return Response.json({ ok: true, updated: updated.length, lineNotifyEnabled, lineResult });
