@@ -1,6 +1,7 @@
 import {
   Bell,
   CalendarDays,
+  Calculator,
   CircleDollarSign,
   LineChart,
   PanelLeftClose,
@@ -17,6 +18,7 @@ export const navItems = [
   { key: "calendar", label: "Dividend Calendar", icon: CalendarDays },
   { key: "dca", label: "DCA Plan", icon: CircleDollarSign },
   { key: "alerts", label: "Alerts", icon: Bell },
+  { key: "calculator", label: "Calculator", icon: Calculator },
   { key: "settings", label: "Settings", icon: Settings }
 ] as const;
 

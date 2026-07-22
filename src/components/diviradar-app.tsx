@@ -13,6 +13,7 @@ import { Portfolio } from "@/components/diviradar/views/portfolio-view";
 import { DividendCalendar, DividendHistoryModal } from "@/components/diviradar/views/dividend-calendar-view";
 import { DcaPlan } from "@/components/diviradar/views/dca-plan-view";
 import { Alerts } from "@/components/diviradar/views/alerts-view";
+import { CalculatorView } from "@/components/diviradar/views/calculator-view";
 import { SettingsView } from "@/components/diviradar/views/settings-view";
 import { StockDetail } from "@/components/diviradar/views/stock-detail-modal";
 import type { Bootstrap, DividendHistoryRow, SettingsForm, Stock } from "@/components/diviradar/types";
@@ -330,6 +331,7 @@ export function DiviRadarApp() {
               }
             />
           )}
+          {view === "calculator" && <CalculatorView />}
           {view === "settings" && (
             <SettingsView
               form={settingsForm}
