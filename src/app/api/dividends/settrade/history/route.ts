@@ -2,38 +2,11 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { jsonError, withAuth } from "@/lib/api";
 import { fetchSettradeXdCalendar } from "@/lib/market-data/settrade-calendar-service";
-
-function bangkokYear() {
-  const year = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Bangkok",
-    year: "numeric"
-  }).format(new Date());
-  return Number(year || new Date().getFullYear());
-}
-
-async function upsertSettradeDividend(stockId: number, row: Awaited<ReturnType<typeof fetchSettradeXdCalendar>>[number]) {
-  const xdDate = new Date(row.xdDate);
-  const paymentDate = row.paymentDate ? new Date(row.paymentDate) : null;
-  const existing = await prisma.dividend.findFirst({
-    where: {
-      stockId,
-      xdDate
-    }
-  });
-  const data = {
-    stockId,
-    xdDate,
-    paymentDate,
-    dividendAmount: row.dividendAmount,
-    dividendYear: xdDate.getFullYear(),
-    dividendType: row.dividendType
-  };
-  if (existing) {
-    await prisma.dividend.update({ where: { id: existing.id }, data });
-  } else {
-    await prisma.dividend.create({ data });
-  }
-}
+import { prismaSettradeXdRepository } from "@/lib/market-data/settrade-xd-repository";
+import {
+  bangkokYearMonth,
+  syncSettradeXdCalendar
+} from "@/lib/market-data/settrade-xd-sync-service";
 
 async function latestSettradeRows(stockId: number) {
   return prisma.dividend.findMany({
@@ -59,43 +32,76 @@ export async function POST(req: Request) {
     });
     if (!stock) return jsonError(`Stock not found: ${symbol}`, 404);
 
-    const currentYear = Number(body.year || bangkokYear());
+    const currentYear = Number(body.year || bangkokYearMonth().year);
     const yearsBack = Math.min(Math.max(Number(body.yearsBack || 6), 1), 10);
     const errors: string[] = [];
+    const warnings: string[] = [];
     let fetched = 0;
     let upserted = 0;
+    let created = 0;
+    let updated = 0;
+    let unchanged = 0;
+    let duplicateRows = 0;
+    let rejectedRows = 0;
+    let conflictingRows = 0;
     let history = await latestSettradeRows(stock.id);
 
     for (let offset = 0; offset < yearsBack && history.length < 4; offset += 1) {
-      const year = currentYear - offset;
-      for (let month = 1; month <= 12; month += 1) {
-        try {
-          const rows = await fetchSettradeXdCalendar({ year, month, symbols: [symbol] });
-          fetched += rows.length;
-          for (const row of rows) {
-            await upsertSettradeDividend(stock.id, row);
-            upserted += 1;
-          }
-        } catch (error) {
-          errors.push(`${year}-${String(month).padStart(2, "0")}: ${error instanceof Error ? error.message : "unknown error"}`);
+      const result = await syncSettradeXdCalendar(
+        {
+          fullYear: true,
+          year: currentYear - offset,
+          symbols: [symbol],
+          successSettingKey: null,
+          attemptSettingKey: null
+        },
+        {
+          repository: prismaSettradeXdRepository,
+          fetchCalendar: fetchSettradeXdCalendar
         }
-      }
+      );
+      fetched += result.fetched;
+      upserted += result.upserted;
+      created += result.created;
+      updated += result.updated;
+      unchanged += result.unchanged;
+      duplicateRows += result.duplicateRows;
+      rejectedRows += result.rejectedRows;
+      conflictingRows += result.conflictingRows;
+      errors.push(...result.errors);
+      warnings.push(...result.warnings);
       history = await latestSettradeRows(stock.id);
     }
 
-    await prisma.setting.upsert({
-      where: { key: `last_settrade_history_sync_${symbol}` },
-      update: { value: new Date().toISOString() },
-      create: { key: `last_settrade_history_sync_${symbol}`, value: new Date().toISOString() }
-    });
+    const attemptedAt = new Date().toISOString();
+    await prismaSettradeXdRepository.setSetting(
+      `last_settrade_history_sync_attempt_${symbol}`,
+      attemptedAt
+    );
+    if (errors.length === 0 && rejectedRows === 0 && conflictingRows === 0) {
+      await prismaSettradeXdRepository.setSetting(
+        `last_settrade_history_sync_${symbol}`,
+        attemptedAt
+      );
+    }
 
-    return Response.json({
-      ok: errors.length === 0,
-      stock,
-      fetched,
-      upserted,
-      errors,
-      dividends: history
-    });
+    return Response.json(
+      {
+        ok: errors.length === 0 && rejectedRows === 0 && conflictingRows === 0,
+        stock,
+        fetched,
+        upserted,
+        created,
+        updated,
+        unchanged,
+        duplicateRows,
+        rejectedRows,
+        conflictingRows,
+        errors,
+        warnings,
+        dividends: history
+      },
+      { status: errors.length > 0 ? 207 : 200 }
+    );
   });
 }

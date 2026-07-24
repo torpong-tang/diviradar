@@ -77,6 +77,7 @@ model Dividend {
 
   stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
 
+  @@unique([stockId, xdDate])
   @@index([stockId])
   @@index([xdDate])
 }

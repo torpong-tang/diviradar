@@ -7,8 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "tsx --test tests/*.test.ts",
+    "test:xd-sync": "tsx --test tests/settrade-xd-sync-service.test.ts",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
+    "db:dedupe-dividends": "tsx scripts/dedupe-dividends.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:demo": "tsx prisma/seed-demo.ts --confirm-demo-reset",
     "db:studio": "prisma studio"

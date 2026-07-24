@@ -230,7 +230,7 @@ export function DiviRadarApp() {
         </div>
       )}
 
-      <div className={`mx-auto grid max-w-7xl gap-6 px-4 py-6 ${sidebarCollapsed ? "lg:grid-cols-[88px_1fr]" : "lg:grid-cols-[260px_1fr]"}`}>
+      <div className={`mx-auto grid max-w-7xl gap-6 px-4 py-6 ${sidebarCollapsed ? "lg:grid-cols-[88px_minmax(0,1fr)]" : "lg:grid-cols-[260px_minmax(0,1fr)]"}`}>
         <aside className="hidden lg:block">
           <Sidebar
             view={view}
@@ -240,7 +240,7 @@ export function DiviRadarApp() {
           />
         </aside>
 
-        <section className="space-y-6">
+        <section className="min-w-0 space-y-6">
           {error && <div className="rounded-2xl border border-rose-400/30 bg-rose-500/12 p-4 text-rose-100">{error}</div>}
           {loading && <Spinner label="กำลังโหลดข้อมูลล่าสุด..." />}
           {view === "dashboard" && <Dashboard data={data} buy={buy} wait={wait} expensive={expensive} />}
@@ -294,7 +294,24 @@ export function DiviRadarApp() {
                   title: "อัปเดต XD Calendar",
                   message: "ดึงข้อมูล XD จาก Settrade Stock Calendar สำหรับหุ้นใน Watchlist และบันทึกลงฐานข้อมูล?",
                   action: async () => {
-                    await api("/api/dividends/settrade/update", { method: "POST", body: JSON.stringify({ fullYear: true }) });
+                    const result = await api<{
+                      ok: boolean;
+                      errors: string[];
+                      warnings: string[];
+                    }>("/api/dividends/settrade/update", {
+                      method: "POST",
+                      body: JSON.stringify({ fullYear: true })
+                    });
+                    if (!result.ok) {
+                      const details = [...result.errors, ...result.warnings]
+                        .slice(0, 2)
+                        .join(" | ");
+                      throw new Error(
+                        details
+                          ? `XD Calendar updated partially: ${details}`
+                          : "XD Calendar updated partially. Please try again."
+                      );
+                    }
                   }
                 })
               }

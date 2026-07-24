@@ -95,8 +95,6 @@ export function XdHistoryMonthTable({ stocks }: { stocks: Stock[] }) {
     [filteredEntries]
   );
 
-  const rowCount = Math.max(1, ...groupedByMonth.map((items) => items.length));
-
   return (
     <div className="mt-6 rounded-3xl border border-sky-400/20 bg-white/5 p-5">
       <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -140,49 +138,37 @@ export function XdHistoryMonthTable({ stocks }: { stocks: Stock[] }) {
       </div>
 
       <div className="mb-3 text-center font-extrabold text-gold">พบรายการ XD ทั้งหมด {filteredEntries.length} รายการ</div>
-      <div className="overflow-x-auto rounded-2xl border border-sky-400/20">
-        <table className="min-w-[1180px] border-collapse text-center">
-          <thead>
-            <tr>
-              <th colSpan={12} className="border border-sky-300/25 bg-gold px-4 py-3 text-lg font-extrabold text-night">
-                XD History by Month
-              </th>
-            </tr>
-            <tr>
-              {thaiMonths.map((month) => (
-                <th key={month} className="border border-sky-300/20 bg-amber-700/80 px-3 py-2 text-night">
-                  {month}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: rowCount }).map((_, rowIndex) => (
-              <tr key={rowIndex}>
-                {groupedByMonth.map((items, monthIndex) => {
-                  const entry = items[rowIndex];
-                  return (
-                    <td key={`${monthIndex}-${rowIndex}`} className="h-16 border border-sky-300/15 bg-slate-300/10 px-2 py-2 align-top">
-                      {entry ? (
-                        <div
-                          title={`${entry.symbol} • XD ${dateText(entry.xdDate)} • Payment ${dateText(entry.paymentDate)} • ${money(entry.dividendAmount, 4)} ฿`}
-                          className="mx-auto inline-flex max-w-full flex-col rounded-xl border border-cyan-300/25 bg-night/85 px-3 py-2 text-left shadow-[0_0_18px_rgba(34,211,238,0.12)]"
-                        >
-                          <span className="truncate text-base font-extrabold text-white">
-                            {entry.symbol} <span className="text-sm text-gold">({money(entry.dividendAmount, 4)} ฿)</span>
-                          </span>
-                          <span className="truncate text-xs text-slate-400">{dateText(entry.xdDate)}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-600">-</span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="overflow-hidden rounded-2xl border border-sky-400/20">
+        <div className="bg-gold px-4 py-3 text-center text-lg font-extrabold text-night">
+          XD History by Month
+        </div>
+        <div className="grid grid-cols-2 gap-px bg-sky-300/15 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+          {groupedByMonth.map((items, monthIndex) => (
+            <section key={thaiMonths[monthIndex]} className="min-w-0 bg-slate-950/70">
+              <h3 className="bg-amber-700/80 px-2 py-2 text-center text-sm font-extrabold text-night">
+                {thaiMonths[monthIndex]}
+              </h3>
+              <div className="flex min-h-24 flex-col gap-2 p-2">
+                {items.length > 0 ? (
+                  items.map((entry) => (
+                    <div
+                      key={entry.key}
+                      title={`${entry.symbol} • XD ${dateText(entry.xdDate)} • Payment ${dateText(entry.paymentDate)} • ${money(entry.dividendAmount, 4)} ฿`}
+                      className="min-w-0 rounded-xl border border-cyan-300/25 bg-night/85 px-3 py-2 shadow-[0_0_18px_rgba(34,211,238,0.12)]"
+                    >
+                      <div className="truncate text-sm font-extrabold text-white">
+                        {entry.symbol} <span className="text-xs text-gold">({money(entry.dividendAmount, 4)} ฿)</span>
+                      </div>
+                      <div className="truncate text-xs text-slate-400">{dateText(entry.xdDate)}</div>
+                    </div>
+                  ))
+                ) : (
+                  <span className="m-auto text-slate-600">-</span>
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
       </div>
     </div>
   );
